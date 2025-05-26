@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
 	"os"
 	"os/exec"
@@ -12,8 +13,12 @@ import (
 )
 
 const (
-	git_tag = "git_tag"
-	git_sha = "git_sha"
+	GitTag = "git_tag"
+	GitSha = "git_sha"
+
+	CmdPre    = "pre"
+	CmdBuild  = "build"
+	CmdDeploy = "deploy"
 )
 
 type Config struct {
@@ -70,6 +75,15 @@ func main() {
 	}
 	defer os.RemoveAll(tmp)
 
+	branch, err := outCommand("", "git", "rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil {
+		log.Fatal(err, "error getting current branch name")
+	}
+
+	if err := runCommand("", "git", "clone", "--single-branch", "--branch", branch, ".", tmp); err != nil {
+		log.Fatalf("error running git clone command: %s", err)
+	}
+
 	secrets := map[string]any{}
 	if sf := os.Getenv("SECRET_FILE"); sf != "" {
 		secretData, err := decrypt.File(sf, "yaml")
@@ -88,116 +102,130 @@ func main() {
 		}
 	}
 
-	cmd := exec.Command("git", "clone", ".", tmp)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		log.Fatalf("error running git clone command: %s", err)
+	if len(flag.Args()) < 2 {
+		if err := pre(tmp, t.Pre); err != nil {
+			log.Fatal(err)
+		}
+		if err := build(tmp, t.Build); err != nil {
+			log.Fatal(err)
+		}
+		if err := deploy(tmp, t.Deploy); err != nil {
+			log.Fatal(err)
+		}
 	}
 
-	for _, pre := range t.Pre {
+	switch flag.Arg(1) {
+	case CmdPre:
+		err = pre(tmp, t.Pre)
+	case CmdBuild:
+		err = build(tmp, t.Build)
+	case CmdDeploy:
+		err = deploy(tmp, t.Deploy)
+	default:
+		log.Fatalf("not supported command: %s", flag.Arg(2))
+	}
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+func pre(tmpdir string, instructions []string) error {
+	for _, pre := range instructions {
 		args := strings.Split(pre, " ")
 		cmd := exec.Command(args[0], args[1:]...)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
-		cmd.Dir = tmp
+		cmd.Dir = tmpdir
 		if err := cmd.Run(); err != nil {
-			log.Fatalf("error running %s command: %s", pre, err)
+			return fmt.Errorf("error running %s: %w", pre, err)
 		}
 	}
 
-	// ctx := context.Background()
-	// cli, err := client.NewEnvClient()
-	// if err != nil {
-	// 	log.Fatalf("error initializing docker client: %s", err)
-	// }
-	// cli.ImageBuild(ctx, "", types.ImageBuildOptions{
-	// 	Platform: t.Build.Platform,
-	// 	Dockerfile: t.Build.File,
-	// })
+	return nil
+}
+
+func build(tmpdir string, config Build) error {
 	bargs := []string{"build"}
-
-	if t.Build.File != "" {
-		bargs = append(bargs, "-f", t.Build.File)
+	if config.File != "" {
+		bargs = append(bargs, "-f", config.File)
 	}
 
-	cmd = exec.Command("git", "describe", "--tags", "--abbrev=0")
-	cmd.Stderr = os.Stderr
-	cmd.Dir = tmp
-	tagout, err := cmd.Output()
-	if err != nil {
-		// log.Fatalf("error getting git tag: %s", err)
-	}
-	gtag := string(tagout)
-
-	cmd = exec.Command("git", "rev-parse", "--short", "HEAD")
-	cmd.Dir = tmp
-	cmd.Stderr = os.Stderr
-	shaout, err := cmd.Output()
-	if err != nil {
-		log.Fatalf("error getting git sha: %s", err)
-	}
-	gsha := string(shaout[:len(shaout)-1])
-
-	for _, tag := range t.Build.Tags {
-		if tag == git_tag {
-			bargs = append(bargs, "-t", t.Build.Image+":"+gtag)
-		} else if tag == git_sha {
-			bargs = append(bargs, "-t", t.Build.Image+":"+gsha)
+	for _, tag := range config.Tags {
+		if tag == GitTag {
+			gtag, err := outCommand(tmpdir, "git", "describe", "--tags", "--abbrev=0")
+			if err != nil {
+				return fmt.Errorf("error getting git tag: %w", err)
+			}
+			bargs = append(bargs, "-t", config.Image+":"+gtag)
+		} else if tag == GitSha {
+			gsha, err := outCommand(tmpdir, "git", "rev-parse", "--short", "HEAD")
+			if err != nil {
+				return fmt.Errorf("error getting git sha: %w", err)
+			}
+			bargs = append(bargs, "-t", config.Image+":"+gsha)
 		} else {
-			bargs = append(bargs, t.Build.Image+":"+tag)
+			bargs = append(bargs, config.Image+":"+tag)
 		}
 	}
 
-	if t.Build.Platform != "" {
-		bargs = append(bargs, "--platform", t.Build.Platform)
+	if config.Platform != "" {
+		bargs = append(bargs, "--platform", config.Platform)
 	}
 
-	if t.Build.Context == "" {
+	if config.Context == "" {
 		bargs = append(bargs, ".")
 	} else {
-		bargs = append(bargs, t.Build.Context)
+		bargs = append(bargs, config.Context)
 	}
-	cmd = exec.Command("docker", bargs...)
-	cmd.Dir = tmp
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		log.Fatalf("error building image: %s", err)
+	if err := runCommand(tmpdir, "docker", bargs...); err != nil {
+		return fmt.Errorf("error building image: %w", err)
 	}
 
-	cmd = exec.Command("docker", "push", t.Build.Image)
-	cmd.Dir = tmp
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		log.Fatalf("error pushing image: %s", err)
+	if err := runCommand(tmpdir, "docker", "push", config.Image); err != nil {
+		return fmt.Errorf("error pushing image: %w", err)
 	}
+	return nil
+}
 
+func deploy(tmp string, config Deploy) error {
 	var dargs []string
-	if t.Deploy.Context != "" {
-		dargs = append(dargs, "--context", t.Deploy.Context)
+	if config.Context != "" {
+		dargs = append(dargs, "--context", config.Context)
 	}
-	dargs = append(dargs, "stack", "deploy")
-	if t.Deploy.File != "" {
-		dargs = append(dargs, "-c", t.Deploy.File)
+	dargs = append(dargs, "stack", "deploy", "-d=false")
+	if config.File != "" {
+		dargs = append(dargs, "-c", config.File)
 	}
-	dargs = append(dargs, t.Deploy.Name)
-	if t.Deploy.Auth != "" {
+	if config.Auth != "" {
 		dargs = append(dargs, "--with-registry-auth")
 	}
-	dargs = append(dargs, "-d", "false")
+	dargs = append(dargs, config.Name)
 
-	for k, v := range t.Deploy.Env {
+	for k, v := range config.Env {
 		os.Setenv(k, v)
 	}
-	cmd = exec.Command("docker", dargs...)
+	if err := runCommand(tmp, "docker", dargs...); err != nil {
+		return fmt.Errorf("error deploying stack: %w", err)
+	}
+	return nil
+}
+
+func runCommand(dir string, name string, arg ...string) error {
+	cmd := exec.Command(name, arg...)
 	log.Println(strings.Join(cmd.Args, " "))
-	cmd.Dir = tmp
-	cmd.Env = os.Environ()
+	cmd.Dir = dir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		log.Fatalf("error deploying stack: %s", err)
+	return cmd.Run()
+}
+
+func outCommand(dir string, name string, arg ...string) (string, error) {
+	cmd := exec.Command(name, arg...)
+	cmd.Stderr = os.Stderr
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
 	}
+	return strings.TrimSpace(string(out)), nil
 }
