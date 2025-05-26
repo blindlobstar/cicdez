@@ -1,4 +1,4 @@
-module github.com/blindlobstar/ez-cicd
+module github.com/blindlobstar/cicdez
 
 go 1.24.1
 
