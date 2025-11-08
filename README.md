@@ -1,179 +1,1097 @@
-# cicdez - Local CI/CD Tool
+# cicdez
 
-A simple, lightweight CI/CD tool for automating pre-build tasks, Docker image building, and deployment workflows locally or in your development environment.
+Easy deployment and continuous delivery tool using Docker Swarm, SOPS, and age encryption.
 
-## Why cicdez?
+## Table of Contents
 
-**Faster than CI runners**: Your local machine is probably more powerful than standard GitHub runners, and there's no network latency or cold start delays.
+- [Overview](#overview)
+- [Getting Started](#getting-started)
+  - [Installation](#installation)
+  - [Quick Start](#quick-start)
+- [Core Concepts](#core-concepts)
+  - [Directory Structure](#directory-structure)
+  - [Global Configuration & Encryption](#global-configuration--encryption)
+- [CLI Reference](#cli-reference)
+  - [init](#init)
+  - [keys](#keys)
+  - [server](#server)
+  - [secret](#secret)
+  - [variable](#variable)
+  - [registry](#registry)
+  - [build](#build)
+  - [deploy](#deploy)
+- [Docker Compose Reference](#docker-compose-reference)
+  - [Git Context Variables](#git-context-variables)
+  - [Variables](#variables)
+  - [Configs](#configs)
+  - [Prebuild](#prebuild)
+  - [Secrets](#secrets-1)
+- [Examples](#examples)
+  - [Complete Docker Compose](#complete-docker-compose)
 
-**Clean builds**: Automatically clones to a temporary directory, ensuring your builds match exactly what's in git - no accidental inclusion of uncommitted changes that cause "works locally but fails in production" issues.
+---
 
-**Simple but structured**: More organized than bash scripts, less complex than enterprise CI/CD platforms.
+## Overview
 
-## Features
+cicdez simplifies deployment management by:
+- Managing secrets with age encryption
+- Extending Docker Compose with git context and custom features
+- Deploying to Docker Swarm with version control
+- Tracking configuration changes via git
 
-- **Fast local execution**: Run on your powerful dev machine instead of waiting for slow CI runners
-- **Clean git-based builds**: Always builds from a clean git clone, preventing "dirty" builds with uncommitted changes
-- **Docker-focused workflow**: Build and push images with automatic git-based tagging
-- **Simple configuration**: YAML config that's much simpler than GitHub Actions
-- **Secret management**: Integrated SOPS support for encrypted secrets
-- **Modular execution**: Run complete pipeline or individual phases (pre/build/deploy)
+## Getting Started
 
-## Installation
+### Installation
 
-1. Ensure you have Go installed 
-2. Clone and build the tool:
-```bash
-git clone <repository-url>
-cd cicdez
-go install
+[TBD]
+
+### Quick Start
+
+1. Initialize project:
+   ```bash
+   cicdez init
+   ```
+
+2. Add a server:
+   ```bash
+   cicdez server add production --host 1.2.3.4 --user deploy --key ~/.ssh/id_rsa
+   ```
+
+3. Add secrets:
+   ```bash
+   cicdez secret add db_password mypassword
+   cicdez secret add api_key sk-1234567890
+   ```
+
+4. Add variables:
+   ```bash
+   cicdez variable add API_URL https://api.example.com
+   ```
+
+5. Deploy:
+   ```bash
+   cicdez deploy -c docker-compose.yml --server production
+   ```
+
+## Core Concepts
+
+### Directory Structure
+
+```
+.cicdez/
+├── config.enc.yaml         # encrypted project config (servers, registries)
+├── secrets.enc.env         # encrypted secrets
+├── .env                    # non-sensitive variables
+└── sops.yaml               # SOPS configuration (team members' public keys)
 ```
 
-## Usage
+### Global Configuration & Encryption
 
-### Run Complete Pipeline
-Execute all phases (pre → build → deploy) for a thing:
+cicdez uses **SOPS** with **age** encryption to protect sensitive data.
+
+**Encryption key:**
+- Default location: `~/.config/cicdez/age.key` (user-specific, no sudo required)
+- Auto-generated on first `cicdez init` command
+- Each team member has their own key
+- Override with `CICDEZ_AGE_KEY_FILE` environment variable
+
+**What is encrypted:**
+- `.cicdez/config.enc.yaml` - server credentials, registry auth
+- `.cicdez/secrets.enc.env` - application secrets
+
+**How it works:**
+1. On first use, cicdez generates age key at `~/.config/cicdez/age.key`
+2. When adding sensitive data (servers, secrets, registries), cicdez encrypts with SOPS
+3. Encrypted files are safe to commit to git
+4. At deploy time, cicdez automatically decrypts using your age key
+5. Secrets are deployed to Docker Swarm as Docker secrets
+
+**Key location priority:**
+1. `$CICDEZ_AGE_KEY_FILE` - if set, uses this path
+2. `~/.config/cicdez/age.key` - default user location
+
+**Multi-user setup:**
+
+Since cicdez uses SOPS, you can encrypt files for multiple team members simultaneously. Each developer has their own private key, and files are encrypted for all team members' public keys.
+
+**Adding team members:**
+
 ```bash
-cicdez my-app
+# Each developer generates their own key (done automatically on first init)
+cicdez init
+# Prints: "Your public key: age1abc..."
+
+# Project owner adds all team members' public keys
+cicdez keys add age1developer1...
+cicdez keys add age1developer2...
+cicdez keys add age1ci_system...
+
+# Updates .sops.yaml and re-encrypts all files for multiple recipients
 ```
 
-### Run Individual Phases
-Execute specific phases:
+**CI/CD usage:**
+
 ```bash
-# Run only pre-build tasks
-cicdez my-app pre
-
-# Run only build phase
-cicdez my-app build
-
-# Run only deploy phase
-cicdez my-app deploy
+# Set environment variable to override key location
+export CICDEZ_AGE_KEY_FILE=/tmp/ci-age-key
+echo "$CI_AGE_KEY_SECRET" > /tmp/ci-age-key
+cicdez deploy -c docker-compose.yml --server production
 ```
 
-## Configuration Reference
+---
 
-### Thing Configuration
+## CLI Reference
 
-Each "thing" in your configuration represents a complete CI/CD pipeline with three optional phases:
+### init
 
-#### Pre Phase
+Initialize cicdez in the current directory.
+
+**Usage:**
+```bash
+cicdez init
+```
+
+**What it does:**
+- Checks for existing age key at `~/.config/cicdez/age.key` (or `$CICDEZ_AGE_KEY_FILE`)
+- If not found, generates a new age key pair
+- Displays your public key (to share with team)
+- Creates `.cicdez/` directory structure
+- Creates `.sops.yaml` with your public key
+- Initializes configuration files
+
+**Example output:**
+```
+Using existing age key at ~/.config/cicdez/age.key
+
+Your public key (share with team):
+  age1qqpqmqmqmqmqmqmqmqmqmqmqmqmqmqmqmqmqmqmqmqmqmqmq
+
+Initialized cicdez in /path/to/project
+```
+
+### keys
+
+Manage encryption keys for team members.
+
+**Commands:**
+
+#### `show`
+Display your public key.
+
+**Usage:**
+```bash
+cicdez keys show
+```
+
+**Output:**
+```
+age1qqpqmqmqmqmqmqmqmqmqmqmqmqmqmqmqmqmqmqmqmqmqmqmq
+```
+
+#### `list`
+List all public keys configured in `.sops.yaml`.
+
+**Usage:**
+```bash
+cicdez keys list
+```
+
+**Output:**
+```
+age1alice... (you)
+age1bob...
+age1ci...
+```
+
+#### `add <public-key>`
+Add a team member's public key.
+
+**Usage:**
+```bash
+cicdez keys add age1bob...
+```
+
+**What it does:**
+- Adds the public key to `.sops.yaml`
+- Re-encrypts all encrypted files (`.cicdez/*.enc.*`) to include the new key
+- The new team member can now decrypt project secrets
+
+**Example:**
+```bash
+# Bob shares his public key with Alice
+bob$ cicdez keys show
+age1bob123...
+
+# Alice adds Bob's key to the project
+alice$ cicdez keys add age1bob123...
+Added age1bob123... to .sops.yaml
+Re-encrypted .cicdez/config.enc.yaml
+Re-encrypted .cicdez/secrets.enc.env
+```
+
+#### `remove <public-key>`
+Remove a team member's public key.
+
+**Usage:**
+```bash
+cicdez keys remove age1bob...
+```
+
+**What it does:**
+- Removes the public key from `.sops.yaml`
+- Re-encrypts all encrypted files without the removed key
+- The removed team member can no longer decrypt project secrets
+
+**Example:**
+```bash
+cicdez keys remove age1bob123...
+Removed age1bob123... from .sops.yaml
+Re-encrypted all files
+```
+
+### server
+
+Manage servers for deployment.
+
+**Commands:**
+
+#### `add <name> <host>`
+Add an already-configured server to the project.
+
+Use this command when the server already has a user with Docker access configured.
+
+**Usage:**
+```bash
+cicdez server add <name> <host> --user <user> --key <path>
+```
+
+**Arguments:**
+- `name` (required) - Server identifier (e.g., production, staging)
+- `host` (required) - IP address or hostname of the server
+
+**Options:**
+- `--user <string>` (required) - SSH username for deployment
+- `--key <path>` (required) - Path to SSH private key
+
+**Example:**
+```bash
+cicdez server add production 192.168.1.100 --user deployer --key ~/.ssh/deployer_key
+```
+
+**Notes:**
+- The user must already exist on the server
+- Docker and Docker Swarm must already be installed and configured
+- The private key will be stored encrypted in `.cicdez/config.enc.yaml`
+
+#### `init <name> <host>`
+Initialize and configure a new server from scratch.
+
+Use this command to set up a fresh server with deployer user, Docker, and Swarm.
+
+**Usage:**
+```bash
+cicdez server init <name> <host> [options]
+```
+
+**Arguments:**
+- `name` (required) - Server identifier (e.g., production, staging)
+- `host` (required) - IP address or hostname of the server
+
+**Options:**
+- `--root-key <path>` (optional) - Path to existing SSH private key for root access
+- `--disable-password-auth` (optional) - Disable password authentication after setup
+
+**What it does:**
+
+This command initializes a server for cicdez deployments by:
+
+1. **Root SSH Key Setup**
+   - **If `--root-key` is provided**: Uses existing key for root access
+   - **If `--root-key` is NOT provided**:
+     - Generates a new SSH key pair for root
+     - Prompts for root password to copy public key to server
+     - Installs public key to root's `authorized_keys`
+   - Stores root private key in `~/.ssh/cicdez_<server-name>_root`
+   - Sets proper SSH permissions (600)
+
+2. **Deployer User Creation**
+   - Creates a new user named `deployer` on the remote server
+   - Generates a new SSH key pair for the deployer user
+   - Configures deployer's SSH `authorized_keys`
+   - Adds deployer to `docker` group for Docker access
+   - Stores deployer's private key encrypted in `.cicdez/config.enc.yaml`
+
+3. **Docker Installation**
+   - Installs Docker Engine on the server (if not already installed)
+   - Enables and starts Docker service
+   - Configures Docker to start on boot
+
+4. **Docker Swarm Setup**
+   - Initializes Docker Swarm mode on the server
+   - Stores Swarm join tokens (encrypted) for adding more nodes later
+
+5. **Security Configuration** (if `--disable-password-auth` is used)
+   - Disables password authentication in SSH config
+   - Requires key-based authentication only
+   - Restarts SSH service
+
+6. **Server Registration**
+   - Automatically adds the server to project configuration (same as `server add`)
+
+**Examples:**
+
+Using existing root key:
+```bash
+cicdez server init production 192.168.1.100 --root-key ~/.ssh/id_rsa
+```
+
+Generate new root key (will prompt for password):
+```bash
+cicdez server init production 192.168.1.100
+# You will be prompted: "Enter root password for 192.168.1.100:"
+```
+
+With password authentication disabled:
+```bash
+cicdez server init production 192.168.1.100 --disable-password-auth
+```
+
+**Server Architecture After Initialization:**
+
+```
+Remote Server
+├── root user
+│   ├── SSH key: ~/.ssh/cicdez_production_root (local machine)
+│   └── Password auth: enabled (or disabled with --disable-password-auth)
+├── deployer user
+│   ├── SSH key: stored encrypted in .cicdez/config.enc.yaml
+│   ├── Member of: docker group
+│   └── Permissions: Docker management
+└── Docker Swarm
+    └── Mode: manager (single-node swarm)
+```
+
+**Notes:**
+- Root access is only needed during initialization
+- All subsequent deployments use the `deployer` user
+- Generated root keys are saved locally and can be used for future server administration
+- The deployer user has Docker access via group membership (no sudo needed)
+- Swarm initialization uses the server's primary IP address
+
+### secret
+
+Manage sensitive values (passwords, tokens, API keys, etc.).
+
+Secrets are stored encrypted in `.cicdez/secrets.enc.env` using age encryption. Secrets can be referenced in docker-compose files and are deployed as Docker Swarm secrets.
+
+**Commands:**
+
+- `add <name> <value>` - Add new secret
+- `list` / `ls` - List all secret names (not values)
+- `edit` - Edit all secrets with your `$EDITOR`
+- `remove <name>` - Remove secret
+
+**Examples:**
+```bash
+cicdez secret add db_password supersecret123
+cicdez secret list
+cicdez secret edit
+cicdez secret remove old_api_key
+```
+
+### variable
+
+Manage non-sensitive environment variables.
+
+Variables are stored in `.cicdez/.env` file and can be accessed in docker-compose files using `${vars.VARIABLE_NAME}` syntax.
+
+**Commands:**
+
+- `add <name> <value>` - Add new variable
+- `list` / `ls` - List all variables
+- `edit` - Edit all variables with your `$EDITOR`
+- `remove <name>` / `rm` - Remove variable
+
+**Examples:**
+```bash
+cicdez variable add API_URL https://api.example.com
+cicdez variable list
+cicdez variable edit
+cicdez variable rm API_URL
+```
+
+### registry
+
+Manage Docker registry authentication for pushing and pulling images.
+
+Registry credentials are stored encrypted in `.cicdez/registries.enc.yaml`.
+
+**Commands:**
+
+- `add` - Add new registry with authentication
+  - `--url` (string) - Registry URL (e.g., docker.io, gcr.io, ghcr.io)
+  - `--username` (string) - Registry username
+  - `--password` (string) - Registry password or token
+- `list` / `ls` - List all configured registries
+- `remove <url>` / `rm` - Remove registry by URL
+
+**Examples:**
+```bash
+cicdez registry add --url ghcr.io --username myuser --password ghp_token123
+cicdez registry list
+cicdez registry remove ghcr.io
+```
+
+### build
+
+Build service images from a docker-compose file.
+
+**Usage:**
+```bash
+cicdez build [service...] -c <compose-file>
+```
+
+**Arguments:**
+- `service` (optional) - One or more service names to build. If omitted, builds all services with `build` sections.
+
+**Options:**
+- `-c` / `--compose-file` (required) - Path to docker-compose file
+
+**Examples:**
+
+Build all services:
+```bash
+cicdez build -c docker-compose.yml
+```
+
+Build specific service:
+```bash
+cicdez build web -c docker-compose.yml
+```
+
+Build multiple services:
+```bash
+cicdez build web api -c docker-compose.yml
+```
+
+**What it does:**
+- Runs prebuild jobs if defined
+- Builds Docker images for specified services
+- Tags images according to docker-compose configuration
+- Substitutes git context variables and regular variables
+
+### deploy
+
+Deploy services to Docker Swarm from a docker-compose file.
+
+**Usage:**
+```bash
+cicdez deploy [service...] -c <compose-file> --server <server> [--stack <name>]
+```
+
+**Arguments:**
+- `service` (optional) - One or more service names to deploy. If omitted, deploys all services.
+
+**Options:**
+- `-c` / `--compose-file` (required) - Path to docker-compose file
+- `--server` (required) - Target server name
+- `--stack` (optional) - Stack name for Docker Swarm. If omitted, auto-detects from:
+  1. `name` field in docker-compose.yml
+  2. Git repository name
+  3. Current directory name
+
+**Examples:**
+
+Deploy all services:
+```bash
+cicdez deploy -c docker-compose.yml --server production
+```
+
+Deploy specific service:
+```bash
+cicdez deploy web -c docker-compose.yml --server production
+```
+
+Deploy multiple services:
+```bash
+cicdez deploy web db -c docker-compose.yml --server production
+```
+
+Deploy with explicit stack name:
+```bash
+cicdez deploy -c docker-compose.yml --server production --stack myapp
+```
+
+**What it does:**
+- Processes docker-compose file with variable substitution
+- Creates/updates Docker Swarm secrets from `.cicdez/secrets.enc.env`
+- Creates/updates Docker Swarm configs (for `local: true` configs)
+- Deploys services to the target server's Docker Swarm
+- Uses `docker stack deploy` under the hood
+
+---
+
+## Docker Compose Reference
+
+cicdez extends standard Docker Compose with custom syntax for easier deployment management.
+
+### Git Context Variables
+
+cicdez provides git context variables that can be used anywhere in docker-compose files using `${git.property}` syntax, similar to GitHub Actions.
+
+**Available Variables:**
+
+- **`${git.sha}`** - Full commit SHA
+  - Example: `a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0`
+
+- **`${git.short_sha}`** - Short commit SHA (7 characters)
+  - Example: `a1b2c3d`
+
+- **`${git.tag}`** - Current git tag (if exists)
+  - Example: `v1.2.3`
+
+- **`${git.branch}`** - Current branch name
+  - Example: `main`, `develop`
+
+- **`${git.author}`** - Commit author name
+  - Example: `John Doe`
+
+- **`${git.author_email}`** - Commit author email
+  - Example: `john@example.com`
+
+- **`${git.message}`** - Commit message
+  - Example: `fix: resolve bug`
+
+**Usage:**
+
+Git context variables are replaced at build and deploy time.
+
+**Example:**
 ```yaml
-pre:
-  - "command arg1 arg2"
-  - "another-command"
+services:
+  web:
+    image: myregistry.com/myapp:${git.tag}
+    # or use short SHA for dev builds
+    # image: myregistry.com/myapp:${git.short_sha}
+    environment:
+      - GIT_COMMIT=${git.sha}
+      - GIT_BRANCH=${git.branch}
+      - DEPLOYED_BY=${git.author}
+    labels:
+      - "git.sha=${git.sha}"
+      - "git.tag=${git.tag}"
+      - "git.author=${git.author}"
 ```
-- List of shell commands to execute before building
-- Commands run in the temporary git clone directory
 
-#### Build Phase
+### Variables
+
+Variables from `.cicdez/.env` are automatically substituted in docker-compose files using the `${vars.VARIABLE_NAME}` syntax.
+
+**Reference:** `${vars.VARIABLE_NAME}`
+
+**Example `.cicdez/.env`:**
+```env
+API_URL=https://api.example.com
+MAX_CONNECTIONS=100
+LOG_LEVEL=info
+```
+
+**Example usage in docker-compose.yml:**
 ```yaml
-build:
-  image: "registry/image-name"     # Required: Docker image name
-  file: "Dockerfile"              # Optional: Dockerfile path (default: Dockerfile)
-  context: "."                    # Optional: Build context (default: .)
-  platform: "linux/amd64"        # Optional: Target platform
-  tags:                          # Optional: Image tags
-    - "latest"
-    - "git_tag"                  # Special: Uses git tag
-    - "git_sha"                  # Special: Uses git commit SHA
-    - "v1.0.0"                   # Custom tags
+environment:
+  - API_URL=${vars.API_URL}
+  - MAX_CONNECTIONS=${vars.MAX_CONNECTIONS}
+  - LOG_LEVEL=${vars.LOG_LEVEL}
 ```
 
-**Special Tags:**
-- `git_tag`: Automatically resolves to the latest git tag using `git describe --tags --abbrev=0`
-- `git_sha`: Automatically resolves to the short commit SHA using `git rev-parse --short HEAD`
+At build or deploy time, cicdez replaces `${vars.*}` placeholders with actual values from `.cicdez/.env`.
 
-#### Deploy Phase
+### Configs
+
+The `configs` section supports both external Docker configs and local files that cicdez manages automatically.
+
+#### Local Configs
+
+When `local: true` is specified, cicdez reads the local file (can be anywhere in your project) and creates a versioned Docker config automatically. The version is based on the file's git commit SHA.
+
+**Syntax:**
 ```yaml
-deploy:
-  name: "stack-name"             # Required: Docker stack name
-  file: "docker-compose.yml"     # Optional: Compose file path
-  context: "production"          # Optional: Docker context
-  auth: "true"                   # Optional: Use registry auth
-  env:                          # Optional: Environment variables
-    KEY: "value"
+configs:
+  - source: <path-to-local-file>
+    target: <container-path>
+    local: true
 ```
 
-## Secret Management
-
-CICDEZ integrates with [SOPS](https://github.com/mozilla/sops) for encrypted secret management:
-
-1. Create an encrypted secrets file using SOPS:
-```bash
-sops secrets.yaml
+**Example:**
+```yaml
+configs:
+  - source: ./configs/nginx.conf
+    target: /etc/nginx/nginx.conf
+    local: true
+  - source: ./app/config.yaml
+    target: /app/config.yaml
+    local: true
 ```
 
-2. Set the `SECRET_FILE` environment variable:
-```bash
-export SECRET_FILE=secrets.yaml
-./cicdez my-app
+**How it works:**
+1. At deploy time, cicdez reads the local file (e.g., `./configs/nginx.conf`)
+2. Gets the last commit SHA where this file was modified
+3. Checks if a Docker config with name `nginx_conf_<sha>` exists
+4. If not, creates a new Docker config with the file contents
+5. Mounts the config to the specified target path in the container
+
+**Versioning:** Each time the local file changes (new commit), cicdez creates a new Docker config. Old configs remain until manually removed.
+
+#### External Configs
+
+Standard Docker configs that already exist in Docker Swarm:
+
+```yaml
+configs:
+  nginx_config:
+    external: true
 ```
 
-Secrets from the file will be automatically loaded as environment variables during execution.
+### Prebuild
 
-## How It Works
+The `prebuild` section allows you to run jobs before building the Docker image. Each job runs in a clean copy of the repository and can execute in a container or on the host machine. Common use cases include running tests, linters, type checkers, or any validation that should pass before building.
 
-1. **Git Clone**: Creates a temporary directory and clones the current branch
-2. **Secret Loading**: If `SECRET_FILE` is set, decrypts and loads secrets as environment variables
-3. **Phase Execution**: Runs the requested phases in order:
-   - **Pre**: Executes shell commands in the cloned directory
-   - **Build**: Builds Docker image with specified tags and pushes to registry
-   - **Deploy**: Deploys Docker stack with specified configuration
+**Syntax:**
 
-## Requirements
+```yaml
+services:
+  web:
+    build:
+      context: .
+    prebuild:
+      - name: <job-name>
+        runs-on: <docker-image>  # optional
+        commands:
+          - name: <command-name>
+            command: <command>
+```
 
-- **Git**: For repository operations and tagging
-- **Docker**: For building images and deploying stacks
-- **Docker Swarm**: For stack deployments (if using deploy phase)
-- **SOPS** (optional): For encrypted secrets management
+**Fields:**
+
+- **`name`** (required) - Job name for logging and identification
+- **`runs-on`** (optional) - Docker image to run the job in. If omitted, runs on the host machine
+- **`commands`** (required) - List of commands to execute in order
+  - **`name`** (required) - Command description
+  - **`command`** (required) - Shell command to execute
+
+**How it works:**
+
+1. When you run `cicdez build`, prebuild jobs execute first for each service
+2. For each job, cicdez creates a clean copy of the repository
+3. If `runs-on` is specified, the job runs inside a Docker container with that image
+4. If `runs-on` is omitted, the job runs directly on the host machine
+5. Commands execute in order within each job
+6. Each command must exit with code 0 (success)
+7. If any command fails, the build stops immediately
+8. If all jobs and commands succeed, the Docker build proceeds
+
+**Examples:**
+
+Run tests in a container:
+```yaml
+prebuild:
+  - name: Test Suite
+    runs-on: node:18
+    commands:
+      - name: Install dependencies
+        command: npm ci
+      - name: Run tests
+        command: npm test
+      - name: Type check
+        command: npm run type-check
+```
+
+Run on host machine:
+```yaml
+prebuild:
+  - name: Local validation
+    commands:  # no runs-on = runs on host
+      - name: Check formatting
+        command: ./scripts/check-format.sh
+      - name: Security scan
+        command: ./scripts/scan.sh
+```
+
+Multiple jobs with different environments:
+```yaml
+prebuild:
+  - name: Backend tests
+    runs-on: golang:1.21
+    commands:
+      - name: Run Go tests
+        command: go test ./...
+      - name: Run Go vet
+        command: go vet ./...
+
+  - name: Frontend tests
+    runs-on: node:18
+    commands:
+      - name: Install dependencies
+        command: npm ci
+      - name: Run tests
+        command: npm test
+      - name: Build check
+        command: npm run build
+
+  - name: Security scan
+    runs-on: alpine:latest
+    commands:
+      - name: Install trivy
+        command: apk add --no-cache curl && curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+      - name: Scan dependencies
+        command: trivy fs .
+```
+
+Mixed host and container execution:
+```yaml
+prebuild:
+  - name: Fast local checks
+    commands:  # runs on host for speed
+      - name: Lint
+        command: npm run lint
+
+  - name: Full test suite
+    runs-on: ubuntu-22.04  # isolated environment
+    commands:
+      - name: Install deps
+        command: npm ci
+      - name: Test
+        command: npm test
+```
+
+### Secrets
+
+The `sensitive` section is a cicdez-specific extension that manages how secrets are injected into containers. Secrets are grouped by target file.
+
+**Syntax:**
+```yaml
+sensitive:
+  - target: <path>
+    format: env|json|raw|template
+    secrets:
+      - source: <secret-name>
+        name: <optional-rename>
+    template: <path>  # required for template format
+    uid: <user-id>
+    gid: <group-id>
+    mode: <permissions>
+```
+
+#### Format Types
+
+##### `env` (default)
+Creates a file with `KEY=VALUE` pairs. Multiple secrets are merged into one file.
+
+```yaml
+sensitive:
+  - target: /app/.env
+    format: env  # optional, this is default
+    secrets:
+      - source: db_password
+        name: DATABASE_PASSWORD  # optional: rename secret
+      - source: api_key
+        name: API_KEY
+    uid: '1000'
+    gid: '1000'
+    mode: 0440
+```
+
+**Output (`/app/.env`):**
+```env
+DATABASE_PASSWORD=secret_value_1
+API_KEY=secret_value_2
+```
+
+##### `json`
+Creates a JSON file with simple key-value structure.
+
+```yaml
+sensitive:
+  - target: /app/secrets.json
+    format: json
+    secrets:
+      - source: db_password
+        name: database_password
+      - source: api_key
+```
+
+**Output (`/app/secrets.json`):**
+```json
+{
+  "database_password": "secret_value_1",
+  "api_key": "secret_value_2"
+}
+```
+
+##### `raw`
+Writes the secret value directly to a file without any formatting. **Only one secret is allowed** - multiple secrets will cause an error.
+
+```yaml
+sensitive:
+  - target: /run/secrets/postgres_password
+    format: raw
+    secrets:
+      - db_password
+    uid: '999'
+    gid: '999'
+    mode: 0440
+```
+
+**Output (`/run/secrets/postgres_password`):**
+```
+secret_value
+```
+
+##### `template`
+Uses a custom template file to generate the output. Secrets are available as variables in the template.
+
+```yaml
+sensitive:
+  - target: /app/config.yaml
+    format: template
+    template: ./templates/config.yaml.tmpl
+    secrets:
+      - source: db_password
+        name: db_pass
+      - source: api_key
+```
+
+**Template file (`./templates/config.yaml.tmpl`):**
+```yaml
+database:
+  password: {{ .db_pass }}
+api:
+  key: {{ .api_key }}
+```
+
+#### Fields Reference
+
+**`target`** (required)
+- Path where the secret file will be mounted in the container
+
+**`format`** (optional)
+- Output format: `env`, `json`, `raw`, or `template`
+- Default: `env`
+
+**`secrets`** (required)
+- List of secrets to include
+- **`source`** (required) - Secret name from `cicdez secret list`
+- **`name`** (optional) - Rename the secret in the output file. If omitted, uses source name
+
+**`template`** (conditional)
+- Path to template file
+- Required for `template` format
+
+**`uid`** (optional)
+- User ID for file ownership
+
+**`gid`** (optional)
+- Group ID for file ownership
+
+**`mode`** (optional)
+- File permissions (e.g., `0440`)
+
+---
 
 ## Examples
 
-### Simple Web Application
+### Complete Docker Compose
+
 ```yaml
-things:
-  webapp:
-    pre:
-      - "npm ci"
-      - "npm run build"
+services:
+  web:
+    image: myregistry.com/myapp:${git.tag}
     build:
-      image: "myregistry/webapp"
-      tags: ["latest", "git_sha"]
+      context: .
+      dockerfile: .dockerfile
+    prebuild:
+      - name: Test and Lint
+        runs-on: node:18
+        commands:
+          - name: Install dependencies
+            command: npm ci
+          - name: Run tests
+            command: npm test
+          - name: Lint code
+            command: npm run lint
     deploy:
-      name: "webapp-stack"
-      file: "docker-compose.prod.yml"
+      replicas: 3
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: start-first
+      rollback_config:
+        parallelism: 1
+        delay: 5s
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+      placement:
+        constraints:
+          - node.role == worker
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+    ports:
+      - "8080:80"
+    networks:
+      - app-network
+    environment:
+      - NODE_ENV=production
+      - API_URL=${vars.API_URL}
+      - GIT_COMMIT=${git.sha}
+    sensitive:
+      - target: /app/.sensitive.env
+        format: env
+        secrets:
+          - source: db_password
+            name: DB_PASSWORD
+          - source: api_key
+            name: API_KEY
+        uid: '1000'
+        gid: '1000'
+        mode: 0440
+    configs:
+      - source: ./configs/nginx.conf
+        target: /etc/nginx/nginx.conf
+        local: true
+    volumes:
+      - app-data:/var/www/html
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  db:
+    image: postgres:15
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.type == database
+    environment:
+      POSTGRES_DB: myapp
+      POSTGRES_USER: dbuser
+    sensitive:
+      - target: /run/secrets/postgres_password
+        format: raw
+        secrets:
+          - db_password
+        uid: '999'
+        gid: '999'
+        mode: 0440
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: overlay
+    attachable: true
+
+volumes:
+  app-data:
+  db-data:
 ```
 
-### Microservice with Tests
-```yaml
-things:
-  api-service:
-    pre:
-      - "go mod download"
-      - "go test -v ./..."
-      - "go build -o app ."
-    build:
-      image: "myregistry/api-service"
-      file: "Dockerfile.prod"
-      platform: "linux/amd64,linux/arm64"
-      tags: ["latest", "git_tag"]
-    deploy:
-      name: "api-service"
-      context: "production"
-      auth: "true"
-      env:
-        LOG_LEVEL: "info"
-        PORT: "8080"
+### Common Workflows
+
+#### Initial Setup
+
+**Solo developer:**
+```bash
+# Initialize project
+cicdez init
+# Generated age key at ~/.config/cicdez/age.key
+# Your public key: age1abc...
+
+# Add production server
+cicdez server add production --host 192.168.1.100 --user deploy --key ~/.ssh/id_rsa
+
+# Add registry authentication
+cicdez registry add --url ghcr.io --username myuser --password ghp_token123
+
+# Add secrets
+cicdez secret add db_password supersecret123
+cicdez secret add api_key sk-1234567890
+
+# Add variables
+cicdez variable add API_URL https://api.example.com
+cicdez variable add LOG_LEVEL info
 ```
 
-## Error Handling
+**Team setup:**
+```bash
+# Alice initializes the project
+alice$ cicdez init
+# Your public key: age1alice...
 
-- Configuration file must exist as `cicdez.yaml`
-- Thing name must exist in configuration
-- Git repository must be initialized
-- Docker must be available and running
-- All shell commands in pre phase must exit with code 0
+alice$ cicdez server add production --host 192.168.1.100 --user deploy --key ~/.ssh/id_rsa
+alice$ cicdez secret add db_password supersecret123
 
-## Contributing
+# Bob joins the project
+bob$ git clone <repo>
+bob$ cicdez init
+# Your public key: age1bob...
 
-This tool is designed to be simple and focused. For feature requests or bug reports, please create an issue in the repository.
+# Bob shares public key with Alice
+bob$ cicdez keys show
+age1bob...
+
+# Alice adds Bob's key
+alice$ cicdez keys add age1bob...
+alice$ git add .sops.yaml .cicdez/*.enc.*
+alice$ git commit -m "Add Bob to encryption keys"
+alice$ git push
+
+# Bob pulls and can now decrypt secrets
+bob$ git pull
+bob$ cicdez secret list
+# Works! Bob can decrypt
+```
+
+#### Build and Deploy
+```bash
+# Build all services
+cicdez build -c docker-compose.yml
+
+# Build specific service
+cicdez build web -c docker-compose.yml
+
+# Deploy all services
+cicdez deploy -c docker-compose.yml --server production
+
+# Deploy specific service
+cicdez deploy web -c docker-compose.yml --server production
+```
+
+#### Update Secrets
+```bash
+# Edit secrets
+cicdez secret edit
+
+# Redeploy to apply changes
+cicdez deploy -c docker-compose.yml --server production
+```
+
+#### Update Variables
+```bash
+# Edit variables
+cicdez variable edit
+
+# Redeploy to apply changes
+cicdez deploy -c docker-compose.yml --server production
+```
