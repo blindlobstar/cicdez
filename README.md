@@ -16,13 +16,11 @@ Easy deployment and continuous delivery tool using Docker Swarm, SOPS, and age e
   - [keys](#keys)
   - [server](#server)
   - [secret](#secret)
-  - [variable](#variable)
   - [registry](#registry)
   - [build](#build)
   - [deploy](#deploy)
 - [Docker Compose Reference](#docker-compose-reference)
   - [Git Context Variables](#git-context-variables)
-  - [Variables](#variables)
   - [Configs](#configs)
   - [Prebuild](#prebuild)
   - [Secrets](#secrets-1)
@@ -63,12 +61,7 @@ cicdez simplifies deployment management by:
    cicdez secret add api_key sk-1234567890
    ```
 
-4. Add variables:
-   ```bash
-   cicdez variable add API_URL https://api.example.com
-   ```
-
-5. Deploy:
+4. Deploy:
    ```bash
    cicdez deploy -c docker-compose.yml --server production
    ```
@@ -81,7 +74,6 @@ cicdez simplifies deployment management by:
 .cicdez/
 ├── config.enc.yaml         # encrypted project config (servers, registries)
 ├── secrets.enc.env         # encrypted secrets
-├── .env                    # non-sensitive variables
 └── sops.yaml               # SOPS configuration (team members' public keys)
 ```
 
@@ -399,27 +391,6 @@ cicdez secret edit
 cicdez secret remove old_api_key
 ```
 
-### variable
-
-Manage non-sensitive environment variables.
-
-Variables are stored in `.cicdez/.env` file and can be accessed in docker-compose files using `${vars.VARIABLE_NAME}` syntax.
-
-**Commands:**
-
-- `add <name> <value>` - Add new variable
-- `list` / `ls` - List all variables
-- `edit` - Edit all variables with your `$EDITOR`
-- `remove <name>` / `rm` - Remove variable
-
-**Examples:**
-```bash
-cicdez variable add API_URL https://api.example.com
-cicdez variable list
-cicdez variable edit
-cicdez variable rm API_URL
-```
-
 ### registry
 
 Manage Docker registry authentication for pushing and pulling images.
@@ -448,7 +419,7 @@ Build service images from a docker-compose file.
 
 **Usage:**
 ```bash
-cicdez build [service...] -c <compose-file>
+cicdez build [service...] -c <compose-file> [--env-file <path>]
 ```
 
 **Arguments:**
@@ -456,6 +427,7 @@ cicdez build [service...] -c <compose-file>
 
 **Options:**
 - `-c` / `--compose-file` (required) - Path to docker-compose file
+- `--env-file` (optional) - Path to environment file. Defaults to `.env` in current directory
 
 **Examples:**
 
@@ -474,11 +446,16 @@ Build multiple services:
 cicdez build web api -c docker-compose.yml
 ```
 
+With custom env file:
+```bash
+cicdez build -c docker-compose.yml --env-file .env.production
+```
+
 **What it does:**
 - Runs prebuild jobs if defined
 - Builds Docker images for specified services
 - Tags images according to docker-compose configuration
-- Substitutes git context variables and regular variables
+- Substitutes git context variables
 
 ### deploy
 
@@ -486,7 +463,7 @@ Deploy services to Docker Swarm from a docker-compose file.
 
 **Usage:**
 ```bash
-cicdez deploy [service...] -c <compose-file> --server <server> [--stack <name>]
+cicdez deploy [service...] -c <compose-file> --server <server> [--stack <name>] [--env-file <path>]
 ```
 
 **Arguments:**
@@ -499,6 +476,7 @@ cicdez deploy [service...] -c <compose-file> --server <server> [--stack <name>]
   1. `name` field in docker-compose.yml
   2. Git repository name
   3. Current directory name
+- `--env-file` (optional) - Path to environment file. Defaults to `.env` in current directory
 
 **Examples:**
 
@@ -520,6 +498,11 @@ cicdez deploy web db -c docker-compose.yml --server production
 Deploy with explicit stack name:
 ```bash
 cicdez deploy -c docker-compose.yml --server production --stack myapp
+```
+
+Deploy with custom env file:
+```bash
+cicdez deploy -c docker-compose.yml --server production --env-file .env.production
 ```
 
 **What it does:**
@@ -582,29 +565,6 @@ services:
       - "git.tag=${git.tag}"
       - "git.author=${git.author}"
 ```
-
-### Variables
-
-Variables from `.cicdez/.env` are automatically substituted in docker-compose files using the `${vars.VARIABLE_NAME}` syntax.
-
-**Reference:** `${vars.VARIABLE_NAME}`
-
-**Example `.cicdez/.env`:**
-```env
-API_URL=https://api.example.com
-MAX_CONNECTIONS=100
-LOG_LEVEL=info
-```
-
-**Example usage in docker-compose.yml:**
-```yaml
-environment:
-  - API_URL=${vars.API_URL}
-  - MAX_CONNECTIONS=${vars.MAX_CONNECTIONS}
-  - LOG_LEVEL=${vars.LOG_LEVEL}
-```
-
-At build or deploy time, cicdez replaces `${vars.*}` placeholders with actual values from `.cicdez/.env`.
 
 ### Configs
 
@@ -948,7 +908,7 @@ services:
       - app-network
     environment:
       - NODE_ENV=production
-      - API_URL=${vars.API_URL}
+      - API_URL=${API_URL}
       - GIT_COMMIT=${git.sha}
     sensitive:
       - target: /app/.sensitive.env
@@ -1027,10 +987,6 @@ cicdez registry add --url ghcr.io --username myuser --password ghp_token123
 # Add secrets
 cicdez secret add db_password supersecret123
 cicdez secret add api_key sk-1234567890
-
-# Add variables
-cicdez variable add API_URL https://api.example.com
-cicdez variable add LOG_LEVEL info
 ```
 
 **Team setup:**
@@ -1071,26 +1027,23 @@ cicdez build -c docker-compose.yml
 # Build specific service
 cicdez build web -c docker-compose.yml
 
+# Build with custom env file
+cicdez build -c docker-compose.yml --env-file .env.production
+
 # Deploy all services
 cicdez deploy -c docker-compose.yml --server production
 
 # Deploy specific service
 cicdez deploy web -c docker-compose.yml --server production
+
+# Deploy with custom env file
+cicdez deploy -c docker-compose.yml --server production --env-file .env.production
 ```
 
 #### Update Secrets
 ```bash
 # Edit secrets
 cicdez secret edit
-
-# Redeploy to apply changes
-cicdez deploy -c docker-compose.yml --server production
-```
-
-#### Update Variables
-```bash
-# Edit variables
-cicdez variable edit
 
 # Redeploy to apply changes
 cicdez deploy -c docker-compose.yml --server production
