@@ -1,6 +1,6 @@
 # cicdez
 
-Easy deployment and continuous delivery tool using Docker Swarm, SOPS, and age encryption.
+Easy deployment and continuous delivery tool using Docker Swarm and age encryption.
 
 ## Table of Contents
 
@@ -13,7 +13,6 @@ Easy deployment and continuous delivery tool using Docker Swarm, SOPS, and age e
   - [Global Configuration & Encryption](#global-configuration--encryption)
 - [CLI Reference](#cli-reference)
   - [init](#init)
-  - [keys](#keys)
   - [server](#server)
   - [secret](#secret)
   - [registry](#registry)
@@ -72,14 +71,14 @@ cicdez simplifies deployment management by:
 
 ```
 .cicdez/
-├── config.enc.yaml         # encrypted project config (servers, registries)
-├── secrets.enc.env         # encrypted secrets
-└── sops.yaml               # SOPS configuration (team members' public keys)
+├── config.age              # encrypted project config (servers, registries)
+├── secrets.age             # encrypted secrets
+└── recipients.txt          # age public keys for team members
 ```
 
 ### Global Configuration & Encryption
 
-cicdez uses **SOPS** with **age** encryption to protect sensitive data.
+cicdez uses **age** encryption to protect sensitive data.
 
 **Encryption key:**
 - Default location: `~/.config/cicdez/age.key` (user-specific, no sudo required)
@@ -88,12 +87,12 @@ cicdez uses **SOPS** with **age** encryption to protect sensitive data.
 - Override with `CICDEZ_AGE_KEY_FILE` environment variable
 
 **What is encrypted:**
-- `.cicdez/config.enc.yaml` - server credentials, registry auth
-- `.cicdez/secrets.enc.env` - application secrets
+- `.cicdez/config.age` - server credentials, registry auth
+- `.cicdez/secrets.age` - application secrets
 
 **How it works:**
 1. On first use, cicdez generates age key at `~/.config/cicdez/age.key`
-2. When adding sensitive data (servers, secrets, registries), cicdez encrypts with SOPS
+2. When adding sensitive data (servers, secrets, registries), cicdez encrypts with age
 3. Encrypted files are safe to commit to git
 4. At deploy time, cicdez automatically decrypts using your age key
 5. Secrets are deployed to Docker Swarm as Docker secrets
@@ -104,7 +103,7 @@ cicdez uses **SOPS** with **age** encryption to protect sensitive data.
 
 **Multi-user setup:**
 
-Since cicdez uses SOPS, you can encrypt files for multiple team members simultaneously. Each developer has their own private key, and files are encrypted for all team members' public keys.
+cicdez can encrypt files for multiple team members simultaneously. Each developer has their own private key, and files are encrypted for all team members' public keys stored in `.cicdez/recipients.txt`.
 
 **Adding team members:**
 
@@ -118,7 +117,7 @@ cicdez keys add age1developer1...
 cicdez keys add age1developer2...
 cicdez keys add age1ci_system...
 
-# Updates .sops.yaml and re-encrypts all files for multiple recipients
+# Adds keys to .cicdez/recipients.txt and re-encrypts all files
 ```
 
 **CI/CD usage:**
@@ -148,8 +147,7 @@ cicdez init
 - If not found, generates a new age key pair
 - Displays your public key (to share with team)
 - Creates `.cicdez/` directory structure
-- Creates `.sops.yaml` with your public key
-- Initializes configuration files
+- Initializes encrypted configuration files
 
 **Example output:**
 ```
@@ -181,7 +179,7 @@ age1qqpqmqmqmqmqmqmqmqmqmqmqmqmqmqmqmqmqmqmqmqmqmqmq
 ```
 
 #### `list`
-List all public keys configured in `.sops.yaml`.
+List all public keys configured for the project.
 
 **Usage:**
 ```bash
@@ -204,8 +202,8 @@ cicdez keys add age1bob...
 ```
 
 **What it does:**
-- Adds the public key to `.sops.yaml`
-- Re-encrypts all encrypted files (`.cicdez/*.enc.*`) to include the new key
+- Adds the public key to `.cicdez/recipients.txt`
+- Re-encrypts all encrypted files (`.cicdez/*.age`) to include the new key
 - The new team member can now decrypt project secrets
 
 **Example:**
@@ -216,9 +214,9 @@ age1bob123...
 
 # Alice adds Bob's key to the project
 alice$ cicdez keys add age1bob123...
-Added age1bob123... to .sops.yaml
-Re-encrypted .cicdez/config.enc.yaml
-Re-encrypted .cicdez/secrets.enc.env
+Added age1bob123...
+Re-encrypted .cicdez/config.age
+Re-encrypted .cicdez/secrets.age
 ```
 
 #### `remove <public-key>`
@@ -230,14 +228,14 @@ cicdez keys remove age1bob...
 ```
 
 **What it does:**
-- Removes the public key from `.sops.yaml`
+- Removes the public key from the project
 - Re-encrypts all encrypted files without the removed key
 - The removed team member can no longer decrypt project secrets
 
 **Example:**
 ```bash
 cicdez keys remove age1bob123...
-Removed age1bob123... from .sops.yaml
+Removed age1bob123...
 Re-encrypted all files
 ```
 
@@ -273,7 +271,7 @@ cicdez server add production 192.168.1.100 --user deployer --key ~/.ssh/deployer
 **Notes:**
 - The user must already exist on the server
 - Docker and Docker Swarm must already be installed and configured
-- The private key will be stored encrypted in `.cicdez/config.enc.yaml`
+- The private key will be stored encrypted in `.cicdez/config.age`
 
 #### `init <name> <host>`
 Initialize and configure a new server from scratch.
@@ -311,7 +309,7 @@ This command initializes a server for cicdez deployments by:
    - Generates a new SSH key pair for the deployer user
    - Configures deployer's SSH `authorized_keys`
    - Adds deployer to `docker` group for Docker access
-   - Stores deployer's private key encrypted in `.cicdez/config.enc.yaml`
+   - Stores deployer's private key encrypted in `.cicdez/config.age`
 
 3. **Docker Installation**
    - Installs Docker Engine on the server (if not already installed)
@@ -356,7 +354,7 @@ Remote Server
 │   ├── SSH key: ~/.ssh/cicdez_production_root (local machine)
 │   └── Password auth: enabled (or disabled with --disable-password-auth)
 ├── deployer user
-│   ├── SSH key: stored encrypted in .cicdez/config.enc.yaml
+│   ├── SSH key: stored encrypted in .cicdez/config.age
 │   ├── Member of: docker group
 │   └── Permissions: Docker management
 └── Docker Swarm
@@ -374,7 +372,7 @@ Remote Server
 
 Manage sensitive values (passwords, tokens, API keys, etc.).
 
-Secrets are stored encrypted in `.cicdez/secrets.enc.env` using age encryption. Secrets can be referenced in docker-compose files and are deployed as Docker Swarm secrets.
+Secrets are stored encrypted in `.cicdez/secrets.age` using age encryption. Secrets can be referenced in docker-compose files and are deployed as Docker Swarm secrets.
 
 **Commands:**
 
@@ -395,7 +393,7 @@ cicdez secret remove old_api_key
 
 Manage Docker registry authentication for pushing and pulling images.
 
-Registry credentials are stored encrypted in `.cicdez/registries.enc.yaml`.
+Registry credentials are stored encrypted in `.cicdez/config.age`.
 
 **Commands:**
 
@@ -507,7 +505,7 @@ cicdez deploy -c docker-compose.yml --server production --env-file .env.producti
 
 **What it does:**
 - Processes docker-compose file with variable substitution
-- Creates/updates Docker Swarm secrets from `.cicdez/secrets.enc.env`
+- Creates/updates Docker Swarm secrets from `.cicdez/secrets.age`
 - Creates/updates Docker Swarm configs (for `local: true` configs)
 - Deploys services to the target server's Docker Swarm
 - Uses `docker stack deploy` under the hood
@@ -1009,7 +1007,7 @@ age1bob...
 
 # Alice adds Bob's key
 alice$ cicdez keys add age1bob...
-alice$ git add .sops.yaml .cicdez/*.enc.*
+alice$ git add .cicdez/
 alice$ git commit -m "Add Bob to encryption keys"
 alice$ git push
 
