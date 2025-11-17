@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 )
 
@@ -12,6 +13,8 @@ func TestRunInit(t *testing.T) {
 
 	keyDir := t.TempDir()
 	os.Setenv(envAgeKeyPath, filepath.Join(keyDir, "age.key"))
+
+	os.Stdout = os.NewFile(uintptr(syscall.Stdin), os.DevNull)
 
 	err := runInit(nil, nil)
 	if err != nil {
