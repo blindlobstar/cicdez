@@ -21,6 +21,7 @@ var rootCmd = &cobra.Command{
 
 func main() {
 	rootCmd.AddCommand(initCmd)
+	rootCmd.AddCommand(secretCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
