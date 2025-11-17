@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 )
 
@@ -17,6 +18,8 @@ func setupTestEnv(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("runInit failed: %v", err)
 	}
+
+	os.Stdout = os.NewFile(uintptr(syscall.Stdin), os.DevNull)
 
 	return tmpDir
 }
