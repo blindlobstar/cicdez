@@ -23,6 +23,7 @@ func main() {
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(secretCmd)
 	rootCmd.AddCommand(serverCmd)
+	rootCmd.AddCommand(registryCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
