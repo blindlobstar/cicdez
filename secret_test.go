@@ -9,6 +9,7 @@ import (
 
 func setupTestEnv(t *testing.T) string {
 	tmpDir := t.TempDir()
+
 	os.Chdir(tmpDir)
 
 	keyDir := t.TempDir()
@@ -20,6 +21,9 @@ func setupTestEnv(t *testing.T) string {
 	}
 
 	os.Stdout = os.NewFile(uintptr(syscall.Stdin), os.DevNull)
+	t.Cleanup(func() {
+		os.Stdout.Close()
+	})
 
 	return tmpDir
 }
