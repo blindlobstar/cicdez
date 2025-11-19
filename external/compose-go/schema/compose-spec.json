@@ -207,6 +207,14 @@
           "$ref": "#/definitions/service_config_or_secret",
           "description": "Grant access to Configs on a per-service basis."
         },
+        "local_configs": {
+          "type": "object",
+          "description": "Local file configs managed by cicdez. These are read from local files and created as versioned Docker configs automatically.",
+          "patternProperties": {
+            "^[a-zA-Z0-9._-]+$": {"$ref": "#/definitions/local_config"}
+          },
+          "additionalProperties": false
+        },
         "container_name": {
           "type": "string",
           "description": "Specify a custom container name, rather than a generated default name.",
@@ -642,6 +650,11 @@
           "type": "string",
           "description": "Target platform to run on, e.g., 'linux/amd64', 'linux/arm64', or 'windows/amd64'."
         },
+        "prebuild": {
+          "type": "array",
+          "description": "Jobs to run before building the Docker image.",
+          "items": {"$ref": "#/definitions/prebuild_job"}
+        },
         "ports": {
           "type": "array",
           "description": "Expose container ports. Short format ([HOST:]CONTAINER[/PROTOCOL]).",
@@ -744,6 +757,14 @@
         "secrets": {
           "$ref": "#/definitions/service_config_or_secret",
           "description": "Grant access to Secrets on a per-service basis."
+        },
+        "sensitive": {
+          "type": "object",
+          "description": "Manages how secrets are injected into containers with custom formatting.",
+          "patternProperties": {
+            "^[a-zA-Z0-9._-]+$": {"$ref": "#/definitions/sensitive_config"}
+          },
+          "additionalProperties": false
         },
         "sysctls": {
           "$ref": "#/definitions/list_or_dict",
@@ -1907,6 +1928,130 @@
           ]
         }
       }
+    },
+    "prebuild_job": {
+      "type": "object",
+      "description": "A job that runs before building the Docker image.",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Job name for logging and identification."
+        },
+        "runs-on": {
+          "type": "string",
+          "description": "Docker image to run the job in. If omitted, runs on the host machine."
+        },
+        "commands": {
+          "type": "array",
+          "description": "List of commands to execute in order.",
+          "items": {"$ref": "#/definitions/prebuild_command"}
+        }
+      },
+      "required": ["name", "commands"],
+      "additionalProperties": false,
+      "patternProperties": {"^x-": {}}
+    },
+    "prebuild_command": {
+      "type": "object",
+      "description": "A single command in a prebuild job.",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Command description."
+        },
+        "command": {
+          "type": "string",
+          "description": "Shell command to execute."
+        }
+      },
+      "required": ["name", "command"],
+      "additionalProperties": false,
+      "patternProperties": {"^x-": {}}
+    },
+    "sensitive_config": {
+      "type": "object",
+      "description": "Configuration for injecting secrets into containers with custom formatting.",
+      "properties": {
+        "target": {
+          "type": "string",
+          "description": "Path where the secret file will be mounted in the container."
+        },
+        "format": {
+          "type": "string",
+          "enum": ["env", "json", "raw", "template"],
+          "description": "Output format: env, json, raw, or template."
+        },
+        "secrets": {
+          "type": "array",
+          "description": "List of secrets to include.",
+          "items": {"$ref": "#/definitions/sensitive_secret"}
+        },
+        "template": {
+          "type": "string",
+          "description": "Path to template file. Required for template format."
+        },
+        "uid": {
+          "type": "string",
+          "description": "User ID for file ownership."
+        },
+        "gid": {
+          "type": "string",
+          "description": "Group ID for file ownership."
+        },
+        "mode": {
+          "type": ["number", "string"],
+          "description": "File permissions (e.g., 0440)."
+        }
+      },
+      "required": ["secrets"],
+      "additionalProperties": false,
+      "patternProperties": {"^x-": {}}
+    },
+    "sensitive_secret": {
+      "type": "object",
+      "description": "A secret reference in a sensitive config.",
+      "properties": {
+        "source": {
+          "type": "string",
+          "description": "Secret name from cicdez secret list."
+        },
+        "name": {
+          "type": "string",
+          "description": "Rename the secret in the output file. If omitted, uses source name."
+        }
+      },
+      "required": ["source"],
+      "additionalProperties": false,
+      "patternProperties": {"^x-": {}}
+    },
+    "local_config": {
+      "type": "object",
+      "description": "Configuration for a local file config managed by cicdez.",
+      "properties": {
+        "source": {
+          "type": "string",
+          "description": "Path to the local file (relative to the project root)."
+        },
+        "target": {
+          "type": "string",
+          "description": "Path in the container where the config will be mounted."
+        },
+        "uid": {
+          "type": "string",
+          "description": "UID of the file in the container. Default is 0 (root)."
+        },
+        "gid": {
+          "type": "string",
+          "description": "GID of the file in the container. Default is 0 (root)."
+        },
+        "mode": {
+          "type": ["number", "string"],
+          "description": "File permission mode inside the container, in octal. Default is 0444."
+        }
+      },
+      "required": ["source", "target"],
+      "additionalProperties": false,
+      "patternProperties": {"^x-": {}}
     }
   }
 }

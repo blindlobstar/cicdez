@@ -26,6 +26,7 @@ var DefaultValues = map[tree.Path]Func{}
 func init() {
 	DefaultValues["services.*.build"] = defaultBuildContext
 	DefaultValues["services.*.secrets.*"] = defaultSecretMount
+	DefaultValues["services.*.sensitive.*"] = defaultSensitiveTarget
 	DefaultValues["services.*.ports.*"] = portDefaults
 	DefaultValues["services.*.deploy.resources.reservations.devices.*"] = deviceRequestDefaults
 	DefaultValues["services.*.gpus.*"] = deviceRequestDefaults

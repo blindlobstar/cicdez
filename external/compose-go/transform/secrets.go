@@ -47,3 +47,16 @@ func defaultSecretMount(data any, p tree.Path, _ bool) (any, error) {
 		return nil, fmt.Errorf("%s: unsupported type %T", p, data)
 	}
 }
+
+func defaultSensitiveTarget(data any, p tree.Path, _ bool) (any, error) {
+	switch v := data.(type) {
+	case map[string]any:
+		if _, ok := v["target"]; !ok {
+			name := p.Last()
+			v["target"] = fmt.Sprintf("/run/secrets/%s", name)
+		}
+		return v, nil
+	default:
+		return nil, fmt.Errorf("%s: unsupported type %T", p, data)
+	}
+}

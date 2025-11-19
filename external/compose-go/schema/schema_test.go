@@ -250,6 +250,126 @@ func TestValidateVariables(t *testing.T) {
 	assert.NilError(t, Validate(config))
 }
 
+func TestValidateLocalConfigs(t *testing.T) {
+	config := map[string]any{
+		"services": map[string]any{
+			"web": map[string]any{
+				"image": "nginx",
+				"local_configs": map[string]any{
+					"nginx_conf": map[string]any{
+						"source": "./configs/nginx.conf",
+						"target": "/etc/nginx/nginx.conf",
+					},
+					"app_config": map[string]any{
+						"source": "./app/config.yaml",
+						"target": "/app/config.yaml",
+						"uid":    "1000",
+						"gid":    "1000",
+						"mode":   0440,
+					},
+				},
+			},
+		},
+	}
+	assert.NilError(t, Validate(config))
+}
+
+func TestValidatePrebuild(t *testing.T) {
+	config := map[string]any{
+		"services": map[string]any{
+			"web": map[string]any{
+				"image": "node:18",
+				"prebuild": []any{
+					map[string]any{
+						"name":    "Test Suite",
+						"runs-on": "node:18",
+						"commands": []any{
+							map[string]any{
+								"name":    "Install dependencies",
+								"command": "npm ci",
+							},
+							map[string]any{
+								"name":    "Run tests",
+								"command": "npm test",
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	assert.NilError(t, Validate(config))
+}
+
+func TestValidateSensitive(t *testing.T) {
+	config := map[string]any{
+		"services": map[string]any{
+			"db": map[string]any{
+				"image": "postgres:15",
+				"sensitive": map[string]any{
+					"app_env": map[string]any{
+						"target": "/app/.env",
+						"format": "env",
+						"secrets": []any{
+							map[string]any{
+								"source": "db_password",
+								"name":   "DATABASE_PASSWORD",
+							},
+							map[string]any{
+								"source": "api_key",
+								"name":   "API_KEY",
+							},
+						},
+						"uid":  "1000",
+						"gid":  "1000",
+						"mode": 0440,
+					},
+				},
+			},
+		},
+	}
+	assert.NilError(t, Validate(config))
+}
+
+func TestValidateCicdezFieldsCombined(t *testing.T) {
+	config := map[string]any{
+		"services": map[string]any{
+			"app": map[string]any{
+				"image": "myapp:latest",
+				"local_configs": map[string]any{
+					"app_config": map[string]any{
+						"source": "./config.yaml",
+						"target": "/app/config.yaml",
+					},
+				},
+				"prebuild": []any{
+					map[string]any{
+						"name": "Tests",
+						"commands": []any{
+							map[string]any{
+								"name":    "Run tests",
+								"command": "go test ./...",
+							},
+						},
+					},
+				},
+				"sensitive": map[string]any{
+					"app_env": map[string]any{
+						"target": "/app/.env",
+						"format": "env",
+						"secrets": []any{
+							map[string]any{
+								"source": "app_secret",
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	assert.NilError(t, Validate(config))
+}
+
 func TestSchema(t *testing.T) {
 	compiler := jsonschema.NewCompiler()
 	json, err := jsonschema.UnmarshalJSON(strings.NewReader(Schema))
