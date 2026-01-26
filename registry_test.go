@@ -16,12 +16,12 @@ func TestRegistryAdd(t *testing.T) {
 		t.Fatalf("runRegistryAdd failed: %v", err)
 	}
 
-	identity, err := loadIdentity()
+	e, err := NewEncrypter(".")
 	if err != nil {
-		t.Fatalf("loadIdentity failed: %v", err)
+		t.Fatalf("NewEncrypter failed: %v", err)
 	}
 
-	config, err := loadConfig(".", identity)
+	config, err := loadConfig(e, ".")
 	if err != nil {
 		t.Fatalf("loadConfig failed: %v", err)
 	}
@@ -65,12 +65,12 @@ func TestRegistryAddUpdate(t *testing.T) {
 		t.Fatalf("runRegistryAdd (update) failed: %v", err)
 	}
 
-	identity, err := loadIdentity()
+	e, err := NewEncrypter(".")
 	if err != nil {
-		t.Fatalf("loadIdentity failed: %v", err)
+		t.Fatalf("NewEncrypter failed: %v", err)
 	}
 
-	config, err := loadConfig(".", identity)
+	config, err := loadConfig(e, ".")
 	if err != nil {
 		t.Fatalf("loadConfig failed: %v", err)
 	}
@@ -144,12 +144,12 @@ func TestRegistryRemove(t *testing.T) {
 		t.Fatalf("runRegistryRemove failed: %v", err)
 	}
 
-	identity, err := loadIdentity()
+	e, err := NewEncrypter(".")
 	if err != nil {
-		t.Fatalf("loadIdentity failed: %v", err)
+		t.Fatalf("NewEncrypter failed: %v", err)
 	}
 
-	config, err := loadConfig(".", identity)
+	config, err := loadConfig(e, ".")
 	if err != nil {
 		t.Fatalf("loadConfig failed: %v", err)
 	}

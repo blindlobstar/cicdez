@@ -63,17 +63,12 @@ func runRegistryAdd(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get current directory: %w", err)
 	}
 
-	identity, err := loadIdentity()
+	e, err := NewEncrypter(cwd)
 	if err != nil {
-		return fmt.Errorf("failed to load identity: %w", err)
+		return fmt.Errorf("failed to create encrypter: %w", err)
 	}
 
-	recipients, err := loadRecipients(cwd)
-	if err != nil {
-		return fmt.Errorf("failed to load recipients: %w", err)
-	}
-
-	config, err := loadConfig(cwd, identity)
+	config, err := loadConfig(e, cwd)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
@@ -88,7 +83,7 @@ func runRegistryAdd(cmd *cobra.Command, args []string) error {
 		Password: registryPassword,
 	}
 
-	if err := saveConfig(cwd, recipients, config); err != nil {
+	if err := saveConfig(e, cwd, config); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 
@@ -102,12 +97,12 @@ func runRegistryList(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get current directory: %w", err)
 	}
 
-	identity, err := loadIdentity()
+	e, err := NewEncrypter(cwd)
 	if err != nil {
-		return fmt.Errorf("failed to load identity: %w", err)
+		return fmt.Errorf("failed to create encrypter: %w", err)
 	}
 
-	config, err := loadConfig(cwd, identity)
+	config, err := loadConfig(e, cwd)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
@@ -143,17 +138,12 @@ func runRegistryRemove(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get current directory: %w", err)
 	}
 
-	identity, err := loadIdentity()
+	e, err := NewEncrypter(cwd)
 	if err != nil {
-		return fmt.Errorf("failed to load identity: %w", err)
+		return fmt.Errorf("failed to create encrypter: %w", err)
 	}
 
-	recipients, err := loadRecipients(cwd)
-	if err != nil {
-		return fmt.Errorf("failed to load recipients: %w", err)
-	}
-
-	config, err := loadConfig(cwd, identity)
+	config, err := loadConfig(e, cwd)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
@@ -164,7 +154,7 @@ func runRegistryRemove(cmd *cobra.Command, args []string) error {
 
 	delete(config.Registries, name)
 
-	if err := saveConfig(cwd, recipients, config); err != nil {
+	if err := saveConfig(e, cwd, config); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 
