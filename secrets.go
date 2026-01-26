@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"filippo.io/age"
 	"gopkg.in/yaml.v3"
 )
 
@@ -14,10 +13,14 @@ type Secrets struct {
 	Values map[string]string `yaml:"values"`
 }
 
-func loadSecrets(path string, identity age.Identity) (Secrets, error) {
+func loadSecrets(e *encrypter, path string) (Secrets, error) {
 	var secrets Secrets
 
-	data, err := decryptFile(identity, filepath.Join(path, secretsPath))
+	if err := e.LoadIdentity(); err != nil {
+		return secrets, err
+	}
+
+	data, err := e.DecryptFile(filepath.Join(path, secretsPath))
 	if err != nil {
 		return secrets, fmt.Errorf("failed to decrypt secrets: %w", err)
 	}
@@ -29,13 +32,17 @@ func loadSecrets(path string, identity age.Identity) (Secrets, error) {
 	return secrets, nil
 }
 
-func saveSecrets(path string, recipients []age.Recipient, secrets Secrets) error {
+func saveSecrets(e *encrypter, path string, secrets Secrets) error {
+	if err := e.LoadRecipients(); err != nil {
+		return err
+	}
+
 	data, err := yaml.Marshal(secrets)
 	if err != nil {
 		return fmt.Errorf("failed to marshal secrets: %w", err)
 	}
 
-	if err := encryptFile(recipients, filepath.Join(path, secretsPath), data); err != nil {
+	if err := e.EncryptFile(data, filepath.Join(path, secretsPath)); err != nil {
 		return fmt.Errorf("failed to encrypt secrets: %w", err)
 	}
 

@@ -36,12 +36,12 @@ func TestSecretAdd(t *testing.T) {
 		t.Fatalf("runSecretAdd failed: %v", err)
 	}
 
-	identity, err := loadIdentity()
+	e, err := NewEncrypter(".")
 	if err != nil {
-		t.Fatalf("loadIdentity failed: %v", err)
+		t.Fatalf("NewEncrypter failed: %v", err)
 	}
 
-	secrets, err := loadSecrets(".", identity)
+	secrets, err := loadSecrets(e, ".")
 	if err != nil {
 		t.Fatalf("loadSecrets failed: %v", err)
 	}
@@ -64,12 +64,12 @@ func TestSecretAddUpdate(t *testing.T) {
 		t.Fatalf("runSecretAdd (update) failed: %v", err)
 	}
 
-	identity, err := loadIdentity()
+	e, err := NewEncrypter(".")
 	if err != nil {
-		t.Fatalf("loadIdentity failed: %v", err)
+		t.Fatalf("NewEncrypter failed: %v", err)
 	}
 
-	secrets, err := loadSecrets(".", identity)
+	secrets, err := loadSecrets(e, ".")
 	if err != nil {
 		t.Fatalf("loadSecrets failed: %v", err)
 	}
@@ -123,12 +123,12 @@ func TestSecretRemove(t *testing.T) {
 		t.Fatalf("runSecretRemove failed: %v", err)
 	}
 
-	identity, err := loadIdentity()
+	e, err := NewEncrypter(".")
 	if err != nil {
-		t.Fatalf("loadIdentity failed: %v", err)
+		t.Fatalf("NewEncrypter failed: %v", err)
 	}
 
-	secrets, err := loadSecrets(".", identity)
+	secrets, err := loadSecrets(e, ".")
 	if err != nil {
 		t.Fatalf("loadSecrets failed: %v", err)
 	}
