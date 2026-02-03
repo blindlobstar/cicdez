@@ -518,29 +518,29 @@ cicdez extends standard Docker Compose with custom syntax for easier deployment 
 
 ### Git Context Variables
 
-cicdez provides git context variables that can be used anywhere in docker-compose files using `${git.property}` syntax, similar to GitHub Actions.
+cicdez provides git context variables that can be used anywhere in docker-compose files using `{git.property}` syntax.
 
 **Available Variables:**
 
-- **`${git.sha}`** - Full commit SHA
+- **`{git.sha}`** - Full commit SHA
   - Example: `a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0`
 
-- **`${git.short_sha}`** - Short commit SHA (7 characters)
+- **`{git.short_sha}`** - Short commit SHA (7 characters)
   - Example: `a1b2c3d`
 
-- **`${git.tag}`** - Current git tag (if exists)
+- **`{git.tag}`** - Current git tag (if exists)
   - Example: `v1.2.3`
 
-- **`${git.branch}`** - Current branch name
+- **`{git.branch}`** - Current branch name
   - Example: `main`, `develop`
 
-- **`${git.author}`** - Commit author name
+- **`{git.author}`** - Commit author name
   - Example: `John Doe`
 
-- **`${git.author_email}`** - Commit author email
+- **`{git.author_email}`** - Commit author email
   - Example: `john@example.com`
 
-- **`${git.message}`** - Commit message
+- **`{git.message}`** - Commit message
   - Example: `fix: resolve bug`
 
 **Usage:**
@@ -551,44 +551,39 @@ Git context variables are replaced at build and deploy time.
 ```yaml
 services:
   web:
-    image: myregistry.com/myapp:${git.tag}
+    image: myregistry.com/myapp:{git.tag}
     # or use short SHA for dev builds
-    # image: myregistry.com/myapp:${git.short_sha}
+    # image: myregistry.com/myapp:{git.short_sha}
     environment:
-      - GIT_COMMIT=${git.sha}
-      - GIT_BRANCH=${git.branch}
-      - DEPLOYED_BY=${git.author}
+      - GIT_COMMIT={git.sha}
+      - GIT_BRANCH={git.branch}
+      - DEPLOYED_BY={git.author}
     labels:
-      - "git.sha=${git.sha}"
-      - "git.tag=${git.tag}"
-      - "git.author=${git.author}"
+      - "git.sha={git.sha}"
+      - "git.tag={git.tag}"
+      - "git.author={git.author}"
 ```
 
-### Configs
+### Local Configs
 
-The `configs` section supports both external Docker configs and local files that cicdez manages automatically.
+The `local_configs` section allows cicdez to manage local files as versioned Docker configs automatically.
 
-#### Local Configs
-
-When `local: true` is specified, cicdez reads the local file (can be anywhere in your project) and creates a versioned Docker config automatically. The version is based on the file's git commit SHA.
+cicdez reads local files (anywhere in your project) and creates versioned Docker configs automatically. The version is based on the file's git commit SHA.
 
 **Syntax:**
 ```yaml
-configs:
+local_configs:
   - source: <path-to-local-file>
     target: <container-path>
-    local: true
 ```
 
 **Example:**
 ```yaml
-configs:
+local_configs:
   - source: ./configs/nginx.conf
     target: /etc/nginx/nginx.conf
-    local: true
   - source: ./app/config.yaml
     target: /app/config.yaml
-    local: true
 ```
 
 **How it works:**
@@ -600,15 +595,7 @@ configs:
 
 **Versioning:** Each time the local file changes (new commit), cicdez creates a new Docker config. Old configs remain until manually removed.
 
-#### External Configs
-
-Standard Docker configs that already exist in Docker Swarm:
-
-```yaml
-configs:
-  nginx_config:
-    external: true
-```
+**Note:** For standard Docker configs that already exist in Docker Swarm, use the regular `configs` section with `external: true`.
 
 ### Prebuild
 
@@ -863,7 +850,7 @@ api:
 ```yaml
 services:
   web:
-    image: myregistry.com/myapp:${git.tag}
+    image: myregistry.com/myapp:{git.tag}
     build:
       context: .
       dockerfile: .dockerfile
@@ -907,7 +894,7 @@ services:
     environment:
       - NODE_ENV=production
       - API_URL=${API_URL}
-      - GIT_COMMIT=${git.sha}
+      - GIT_COMMIT={git.sha}
     sensitive:
       - target: /app/.sensitive.env
         format: env
@@ -919,10 +906,9 @@ services:
         uid: '1000'
         gid: '1000'
         mode: 0440
-    configs:
+    local_configs:
       - source: ./configs/nginx.conf
         target: /etc/nginx/nginx.conf
-        local: true
     volumes:
       - app-data:/var/www/html
     healthcheck:
