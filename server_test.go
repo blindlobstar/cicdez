@@ -16,12 +16,7 @@ func TestServerAdd(t *testing.T) {
 		t.Fatalf("runServerAdd failed: %v", err)
 	}
 
-	e, err := NewEncrypter(".")
-	if err != nil {
-		t.Fatalf("NewEncrypter failed: %v", err)
-	}
-
-	config, err := loadConfig(e, ".")
+	config, err := loadConfig(".")
 	if err != nil {
 		t.Fatalf("loadConfig failed: %v", err)
 	}
@@ -52,12 +47,7 @@ func TestServerAddWithKey(t *testing.T) {
 		t.Fatalf("runServerAdd failed: %v", err)
 	}
 
-	e, err := NewEncrypter(".")
-	if err != nil {
-		t.Fatalf("NewEncrypter failed: %v", err)
-	}
-
-	config, err := loadConfig(e, ".")
+	config, err := loadConfig(".")
 	if err != nil {
 		t.Fatalf("loadConfig failed: %v", err)
 	}
@@ -93,12 +83,7 @@ func TestServerAddUpdate(t *testing.T) {
 		t.Fatalf("runServerAdd (update) failed: %v", err)
 	}
 
-	e, err := NewEncrypter(".")
-	if err != nil {
-		t.Fatalf("NewEncrypter failed: %v", err)
-	}
-
-	config, err := loadConfig(e, ".")
+	config, err := loadConfig(".")
 	if err != nil {
 		t.Fatalf("loadConfig failed: %v", err)
 	}
@@ -171,12 +156,7 @@ func TestServerRemove(t *testing.T) {
 		t.Fatalf("runServerRemove failed: %v", err)
 	}
 
-	e, err := NewEncrypter(".")
-	if err != nil {
-		t.Fatalf("NewEncrypter failed: %v", err)
-	}
-
-	config, err := loadConfig(e, ".")
+	config, err := loadConfig(".")
 	if err != nil {
 		t.Fatalf("loadConfig failed: %v", err)
 	}
