@@ -60,12 +60,7 @@ func runSecretAdd(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get current directory: %w", err)
 	}
 
-	e, err := NewEncrypter(cwd)
-	if err != nil {
-		return fmt.Errorf("failed to create encrypter: %w", err)
-	}
-
-	secrets, err := loadSecrets(e, cwd)
+	secrets, err := loadSecrets(cwd)
 	if err != nil {
 		return fmt.Errorf("failed to load secrets: %w", err)
 	}
@@ -76,7 +71,7 @@ func runSecretAdd(cmd *cobra.Command, args []string) error {
 
 	secrets.Values[name] = value
 
-	if err := saveSecrets(e, cwd, secrets); err != nil {
+	if err := saveSecrets(cwd, secrets); err != nil {
 		return fmt.Errorf("failed to save secrets: %w", err)
 	}
 
@@ -90,12 +85,7 @@ func runSecretList(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get current directory: %w", err)
 	}
 
-	e, err := NewEncrypter(cwd)
-	if err != nil {
-		return fmt.Errorf("failed to create encrypter: %w", err)
-	}
-
-	secrets, err := loadSecrets(e, cwd)
+	secrets, err := loadSecrets(cwd)
 	if err != nil {
 		return fmt.Errorf("failed to load secrets: %w", err)
 	}
@@ -125,12 +115,7 @@ func runSecretEdit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get current directory: %w", err)
 	}
 
-	e, err := NewEncrypter(cwd)
-	if err != nil {
-		return fmt.Errorf("failed to create encrypter: %w", err)
-	}
-
-	secrets, err := loadSecrets(e, cwd)
+	secrets, err := loadSecrets(cwd)
 	if err != nil {
 		return fmt.Errorf("failed to load secrets: %w", err)
 	}
@@ -177,7 +162,7 @@ func runSecretEdit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to parse edited secrets: %w", err)
 	}
 
-	if err := saveSecrets(e, cwd, editedSecrets); err != nil {
+	if err := saveSecrets(cwd, editedSecrets); err != nil {
 		return fmt.Errorf("failed to save secrets: %w", err)
 	}
 
@@ -193,12 +178,7 @@ func runSecretRemove(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get current directory: %w", err)
 	}
 
-	e, err := NewEncrypter(cwd)
-	if err != nil {
-		return fmt.Errorf("failed to create encrypter: %w", err)
-	}
-
-	secrets, err := loadSecrets(e, cwd)
+	secrets, err := loadSecrets(cwd)
 	if err != nil {
 		return fmt.Errorf("failed to load secrets: %w", err)
 	}
@@ -209,7 +189,7 @@ func runSecretRemove(cmd *cobra.Command, args []string) error {
 
 	delete(secrets.Values, name)
 
-	if err := saveSecrets(e, cwd, secrets); err != nil {
+	if err := saveSecrets(cwd, secrets); err != nil {
 		return fmt.Errorf("failed to save secrets: %w", err)
 	}
 

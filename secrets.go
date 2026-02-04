@@ -13,14 +13,10 @@ type Secrets struct {
 	Values map[string]string `yaml:"values"`
 }
 
-func loadSecrets(e *encrypter, path string) (Secrets, error) {
+func loadSecrets(path string) (Secrets, error) {
 	var secrets Secrets
 
-	if err := e.LoadIdentity(); err != nil {
-		return secrets, err
-	}
-
-	data, err := e.DecryptFile(filepath.Join(path, secretsPath))
+	data, err := DecryptFile(filepath.Join(path, secretsPath))
 	if err != nil {
 		return secrets, fmt.Errorf("failed to decrypt secrets: %w", err)
 	}
@@ -32,17 +28,13 @@ func loadSecrets(e *encrypter, path string) (Secrets, error) {
 	return secrets, nil
 }
 
-func saveSecrets(e *encrypter, path string, secrets Secrets) error {
-	if err := e.LoadRecipients(); err != nil {
-		return err
-	}
-
+func saveSecrets(path string, secrets Secrets) error {
 	data, err := yaml.Marshal(secrets)
 	if err != nil {
 		return fmt.Errorf("failed to marshal secrets: %w", err)
 	}
 
-	if err := e.EncryptFile(data, filepath.Join(path, secretsPath)); err != nil {
+	if err := EncryptFile(filepath.Join(path, secretsPath), data); err != nil {
 		return fmt.Errorf("failed to encrypt secrets: %w", err)
 	}
 

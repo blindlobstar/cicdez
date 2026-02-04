@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"syscall"
 	"testing"
+
+	"filippo.io/age"
 )
 
 func setupTestEnv(t *testing.T) string {
@@ -12,13 +14,20 @@ func setupTestEnv(t *testing.T) string {
 
 	os.Chdir(tmpDir)
 
-	keyDir := t.TempDir()
-	os.Setenv(envAgeKeyPath, filepath.Join(keyDir, "age.key"))
-
-	err := runInit(nil, nil)
+	newIdentity, err := age.GenerateX25519Identity()
 	if err != nil {
-		t.Fatalf("runInit failed: %v", err)
+		t.Fatalf("failed to generate age key: %v", err)
 	}
+	identity = newIdentity
+
+	if err := os.MkdirAll(filepath.Join(tmpDir, ".keys"), 0o700); err != nil {
+		t.Fatalf("failed to create key directory: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(tmpDir, ".keys", "age.key"), []byte(identity.String()+"\n"), 0o600); err != nil {
+		t.Fatalf("failed to write age key: %v", err)
+	}
+	os.Setenv(envAgeKeyPath, filepath.Join(tmpDir, ".keys", "age.key"))
 
 	os.Stdout = os.NewFile(uintptr(syscall.Stdin), os.DevNull)
 	t.Cleanup(func() {
@@ -36,12 +45,7 @@ func TestSecretAdd(t *testing.T) {
 		t.Fatalf("runSecretAdd failed: %v", err)
 	}
 
-	e, err := NewEncrypter(".")
-	if err != nil {
-		t.Fatalf("NewEncrypter failed: %v", err)
-	}
-
-	secrets, err := loadSecrets(e, ".")
+	secrets, err := loadSecrets(".")
 	if err != nil {
 		t.Fatalf("loadSecrets failed: %v", err)
 	}
@@ -64,12 +68,7 @@ func TestSecretAddUpdate(t *testing.T) {
 		t.Fatalf("runSecretAdd (update) failed: %v", err)
 	}
 
-	e, err := NewEncrypter(".")
-	if err != nil {
-		t.Fatalf("NewEncrypter failed: %v", err)
-	}
-
-	secrets, err := loadSecrets(e, ".")
+	secrets, err := loadSecrets(".")
 	if err != nil {
 		t.Fatalf("loadSecrets failed: %v", err)
 	}
@@ -123,12 +122,7 @@ func TestSecretRemove(t *testing.T) {
 		t.Fatalf("runSecretRemove failed: %v", err)
 	}
 
-	e, err := NewEncrypter(".")
-	if err != nil {
-		t.Fatalf("NewEncrypter failed: %v", err)
-	}
-
-	secrets, err := loadSecrets(e, ".")
+	secrets, err := loadSecrets(".")
 	if err != nil {
 		t.Fatalf("loadSecrets failed: %v", err)
 	}

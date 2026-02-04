@@ -62,12 +62,7 @@ func runServerAdd(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get current directory: %w", err)
 	}
 
-	e, err := NewEncrypter(cwd)
-	if err != nil {
-		return fmt.Errorf("failed to create encrypter: %w", err)
-	}
-
-	config, err := loadConfig(e, cwd)
+	config, err := loadConfig(cwd)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
@@ -82,7 +77,7 @@ func runServerAdd(cmd *cobra.Command, args []string) error {
 		Key:  serverKey,
 	}
 
-	if err := saveConfig(e, cwd, config); err != nil {
+	if err := saveConfig(cwd, config); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 
@@ -96,12 +91,7 @@ func runServerList(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get current directory: %w", err)
 	}
 
-	e, err := NewEncrypter(cwd)
-	if err != nil {
-		return fmt.Errorf("failed to create encrypter: %w", err)
-	}
-
-	config, err := loadConfig(e, cwd)
+	config, err := loadConfig(cwd)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
@@ -140,12 +130,7 @@ func runServerRemove(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get current directory: %w", err)
 	}
 
-	e, err := NewEncrypter(cwd)
-	if err != nil {
-		return fmt.Errorf("failed to create encrypter: %w", err)
-	}
-
-	config, err := loadConfig(e, cwd)
+	config, err := loadConfig(cwd)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
@@ -156,7 +141,7 @@ func runServerRemove(cmd *cobra.Command, args []string) error {
 
 	delete(config.Servers, name)
 
-	if err := saveConfig(e, cwd, config); err != nil {
+	if err := saveConfig(cwd, config); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 

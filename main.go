@@ -20,7 +20,6 @@ var rootCmd = &cobra.Command{
 }
 
 func main() {
-	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(secretCmd)
 	rootCmd.AddCommand(serverCmd)
 	rootCmd.AddCommand(registryCmd)

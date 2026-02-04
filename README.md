@@ -12,7 +12,6 @@ Easy deployment and continuous delivery tool using Docker Swarm and age encrypti
   - [Directory Structure](#directory-structure)
   - [Global Configuration & Encryption](#global-configuration--encryption)
 - [CLI Reference](#cli-reference)
-  - [init](#init)
   - [server](#server)
   - [secret](#secret)
   - [registry](#registry)
@@ -44,9 +43,10 @@ cicdez simplifies deployment management by:
 
 ### Quick Start
 
-1. Initialize project:
+1. Generate an age key and set the environment variable:
    ```bash
-   cicdez init
+   age-keygen -o ~/.config/cicdez/age.key
+   export CICDEZ_AGE_KEY_FILE=~/.config/cicdez/age.key
    ```
 
 2. Add a server:
@@ -72,58 +72,39 @@ cicdez simplifies deployment management by:
 ```
 .cicdez/
 ├── config.age              # encrypted project config (servers, registries)
-├── secrets.age             # encrypted secrets
-└── recipients.txt          # age public keys for team members
+└── secrets.age             # encrypted secrets
 ```
 
 ### Global Configuration & Encryption
 
 cicdez uses **age** encryption to protect sensitive data.
 
-**Encryption key:**
-- Default location: `~/.config/cicdez/age.key` (user-specific, no sudo required)
-- Auto-generated on first `cicdez init` command
-- Each team member has their own key
-- Override with `CICDEZ_AGE_KEY_FILE` environment variable
+**Encryption key setup:**
+
+Before using cicdez, generate an age key and set the environment variable:
+```bash
+age-keygen -o ~/.config/cicdez/age.key
+export CICDEZ_AGE_KEY_FILE=~/.config/cicdez/age.key
+```
+
+Add the export to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.) to make it permanent.
 
 **What is encrypted:**
 - `.cicdez/config.age` - server credentials, registry auth
 - `.cicdez/secrets.age` - application secrets
 
 **How it works:**
-1. On first use, cicdez generates age key at `~/.config/cicdez/age.key`
-2. When adding sensitive data (servers, secrets, registries), cicdez encrypts with age
-3. Encrypted files are safe to commit to git
-4. At deploy time, cicdez automatically decrypts using your age key
-5. Secrets are deployed to Docker Swarm as Docker secrets
-
-**Key location priority:**
-1. `$CICDEZ_AGE_KEY_FILE` - if set, uses this path
-2. `~/.config/cicdez/age.key` - default user location
-
-**Multi-user setup:**
-
-cicdez can encrypt files for multiple team members simultaneously. Each developer has their own private key, and files are encrypted for all team members' public keys stored in `.cicdez/recipients.txt`.
-
-**Adding team members:**
-
-```bash
-# Each developer generates their own key (done automatically on first init)
-cicdez init
-# Prints: "Your public key: age1abc..."
-
-# Project owner adds all team members' public keys
-cicdez keys add age1developer1...
-cicdez keys add age1developer2...
-cicdez keys add age1ci_system...
-
-# Adds keys to .cicdez/recipients.txt and re-encrypts all files
-```
+1. You generate an age key using `age-keygen`
+2. Set `CICDEZ_AGE_KEY_FILE` to point to your key
+3. When adding sensitive data (servers, secrets, registries), cicdez encrypts with age
+4. Encrypted files are safe to commit to git
+5. At deploy time, cicdez automatically decrypts using your age key
+6. Secrets are deployed to Docker Swarm as Docker secrets
 
 **CI/CD usage:**
 
 ```bash
-# Set environment variable to override key location
+# Set environment variable to the key location
 export CICDEZ_AGE_KEY_FILE=/tmp/ci-age-key
 echo "$CI_AGE_KEY_SECRET" > /tmp/ci-age-key
 cicdez deploy -c docker-compose.yml --server production
@@ -132,112 +113,6 @@ cicdez deploy -c docker-compose.yml --server production
 ---
 
 ## CLI Reference
-
-### init
-
-Initialize cicdez in the current directory.
-
-**Usage:**
-```bash
-cicdez init
-```
-
-**What it does:**
-- Checks for existing age key at `~/.config/cicdez/age.key` (or `$CICDEZ_AGE_KEY_FILE`)
-- If not found, generates a new age key pair
-- Displays your public key (to share with team)
-- Creates `.cicdez/` directory structure
-- Initializes encrypted configuration files
-
-**Example output:**
-```
-Using existing age key at ~/.config/cicdez/age.key
-
-Your public key (share with team):
-  age1qqpqmqmqmqmqmqmqmqmqmqmqmqmqmqmqmqmqmqmqmqmqmqmq
-
-Initialized cicdez in /path/to/project
-```
-
-### keys
-
-Manage encryption keys for team members.
-
-**Commands:**
-
-#### `show`
-Display your public key.
-
-**Usage:**
-```bash
-cicdez keys show
-```
-
-**Output:**
-```
-age1qqpqmqmqmqmqmqmqmqmqmqmqmqmqmqmqmqmqmqmqmqmqmqmq
-```
-
-#### `list`
-List all public keys configured for the project.
-
-**Usage:**
-```bash
-cicdez keys list
-```
-
-**Output:**
-```
-age1alice... (you)
-age1bob...
-age1ci...
-```
-
-#### `add <public-key>`
-Add a team member's public key.
-
-**Usage:**
-```bash
-cicdez keys add age1bob...
-```
-
-**What it does:**
-- Adds the public key to `.cicdez/recipients.txt`
-- Re-encrypts all encrypted files (`.cicdez/*.age`) to include the new key
-- The new team member can now decrypt project secrets
-
-**Example:**
-```bash
-# Bob shares his public key with Alice
-bob$ cicdez keys show
-age1bob123...
-
-# Alice adds Bob's key to the project
-alice$ cicdez keys add age1bob123...
-Added age1bob123...
-Re-encrypted .cicdez/config.age
-Re-encrypted .cicdez/secrets.age
-```
-
-#### `remove <public-key>`
-Remove a team member's public key.
-
-**Usage:**
-```bash
-cicdez keys remove age1bob...
-```
-
-**What it does:**
-- Removes the public key from the project
-- Re-encrypts all encrypted files without the removed key
-- The removed team member can no longer decrypt project secrets
-
-**Example:**
-```bash
-cicdez keys remove age1bob123...
-Removed age1bob123...
-Re-encrypted all files
-```
 
 ### server
 
@@ -955,12 +830,10 @@ volumes:
 
 #### Initial Setup
 
-**Solo developer:**
 ```bash
-# Initialize project
-cicdez init
-# Generated age key at ~/.config/cicdez/age.key
-# Your public key: age1abc...
+# Generate age key and set environment variable
+age-keygen -o ~/.config/cicdez/age.key
+export CICDEZ_AGE_KEY_FILE=~/.config/cicdez/age.key
 
 # Add production server
 cicdez server add production --host 192.168.1.100 --user deploy --key ~/.ssh/id_rsa
@@ -971,36 +844,6 @@ cicdez registry add --url ghcr.io --username myuser --password ghp_token123
 # Add secrets
 cicdez secret add db_password supersecret123
 cicdez secret add api_key sk-1234567890
-```
-
-**Team setup:**
-```bash
-# Alice initializes the project
-alice$ cicdez init
-# Your public key: age1alice...
-
-alice$ cicdez server add production --host 192.168.1.100 --user deploy --key ~/.ssh/id_rsa
-alice$ cicdez secret add db_password supersecret123
-
-# Bob joins the project
-bob$ git clone <repo>
-bob$ cicdez init
-# Your public key: age1bob...
-
-# Bob shares public key with Alice
-bob$ cicdez keys show
-age1bob...
-
-# Alice adds Bob's key
-alice$ cicdez keys add age1bob...
-alice$ git add .cicdez/
-alice$ git commit -m "Add Bob to encryption keys"
-alice$ git push
-
-# Bob pulls and can now decrypt secrets
-bob$ git pull
-bob$ cicdez secret list
-# Works! Bob can decrypt
 ```
 
 #### Build and Deploy
