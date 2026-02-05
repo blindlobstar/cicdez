@@ -1,12 +1,23 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"sort"
 
+	"github.com/docker/docker/api/types/registry"
+	"github.com/docker/docker/client"
 	"github.com/spf13/cobra"
 )
+
+type RegistryClient interface {
+	RegistryLogin(ctx context.Context, auth registry.AuthConfig) (registry.AuthenticateOKBody, error)
+}
+
+var newRegistryClient = func() (RegistryClient, error) {
+	return client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+}
 
 var registryCmd = &cobra.Command{
 	Use:   "registry",
@@ -15,7 +26,7 @@ var registryCmd = &cobra.Command{
 }
 
 var registryAddCmd = &cobra.Command{
-	Use:   "add <name>",
+	Use:   "add <server>",
 	Short: "Add or update a registry",
 	Args:  cobra.ExactArgs(1),
 	RunE:  runRegistryAdd,
@@ -29,7 +40,7 @@ var registryListCmd = &cobra.Command{
 }
 
 var registryRemoveCmd = &cobra.Command{
-	Use:     "remove <name>",
+	Use:     "remove <server>",
 	Aliases: []string{"rm", "delete"},
 	Short:   "Remove a registry",
 	Args:    cobra.ExactArgs(1),
@@ -37,16 +48,13 @@ var registryRemoveCmd = &cobra.Command{
 }
 
 var (
-	registryURL      string
 	registryUsername string
 	registryPassword string
 )
 
 func init() {
-	registryAddCmd.Flags().StringVar(&registryURL, "url", "", "Registry URL (required)")
 	registryAddCmd.Flags().StringVar(&registryUsername, "username", "", "Registry username (required)")
 	registryAddCmd.Flags().StringVar(&registryPassword, "password", "", "Registry password (required)")
-	registryAddCmd.MarkFlagRequired("url")
 	registryAddCmd.MarkFlagRequired("username")
 	registryAddCmd.MarkFlagRequired("password")
 
@@ -56,11 +64,29 @@ func init() {
 }
 
 func runRegistryAdd(cmd *cobra.Command, args []string) error {
-	name := args[0]
+	server := args[0]
 
 	cwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get current directory: %w", err)
+	}
+
+	authConfig := registry.AuthConfig{
+		Username:      registryUsername,
+		Password:      registryPassword,
+		ServerAddress: server,
+	}
+	dockerClient, err := newRegistryClient()
+	if err != nil {
+		return fmt.Errorf("failed to create docker client: %w", err)
+	}
+	resp, err := dockerClient.RegistryLogin(cmd.Context(), authConfig)
+	if err != nil {
+		return err
+	}
+	if resp.IdentityToken != "" {
+		authConfig.Password = ""
+		authConfig.IdentityToken = resp.IdentityToken
 	}
 
 	config, err := loadConfig(cwd)
@@ -69,20 +95,19 @@ func runRegistryAdd(cmd *cobra.Command, args []string) error {
 	}
 
 	if config.Registries == nil {
-		config.Registries = make(map[string]Registry)
+		config.Registries = make(map[string]registry.AuthConfig)
 	}
 
-	config.Registries[name] = Registry{
-		URL:      registryURL,
-		Username: registryUsername,
-		Password: registryPassword,
-	}
+	config.Registries[server] = authConfig
 
 	if err := saveConfig(cwd, config); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 
-	fmt.Printf("Registry '%s' added\n", name)
+	if resp.Status != "" {
+		fmt.Println(resp.Status)
+	}
+
 	return nil
 }
 
@@ -112,7 +137,7 @@ func runRegistryList(cmd *cobra.Command, args []string) error {
 	for _, name := range names {
 		registry := config.Registries[name]
 		fmt.Printf("  %s:\n", name)
-		fmt.Printf("    URL: %s\n", registry.URL)
+		fmt.Printf("    URL: %s\n", registry.ServerAddress)
 		fmt.Printf("    Username: %s\n", registry.Username)
 		fmt.Printf("    Password: <configured>\n")
 	}
@@ -121,7 +146,7 @@ func runRegistryList(cmd *cobra.Command, args []string) error {
 }
 
 func runRegistryRemove(cmd *cobra.Command, args []string) error {
-	name := args[0]
+	server := args[0]
 
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -133,16 +158,16 @@ func runRegistryRemove(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	if _, exists := config.Registries[name]; !exists {
-		return fmt.Errorf("registry '%s' not found", name)
+	if _, exists := config.Registries[server]; !exists {
+		return fmt.Errorf("registry '%s' not found", server)
 	}
 
-	delete(config.Registries, name)
+	delete(config.Registries, server)
 
 	if err := saveConfig(cwd, config); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 
-	fmt.Printf("Registry '%s' removed\n", name)
+	fmt.Printf("Registry '%s' removed\n", server)
 	return nil
 }

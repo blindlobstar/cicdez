@@ -1,17 +1,44 @@
 package main
 
 import (
+	"context"
 	"testing"
+
+	"github.com/docker/docker/api/types/registry"
+	"github.com/spf13/cobra"
 )
 
-func TestRegistryAdd(t *testing.T) {
-	setupTestEnv(t)
+type mockRegistryClient struct {
+	loginFunc func(ctx context.Context, auth registry.AuthConfig) (registry.AuthenticateOKBody, error)
+}
 
-	registryURL = "https://registry.example.com"
+func (m *mockRegistryClient) RegistryLogin(ctx context.Context, auth registry.AuthConfig) (registry.AuthenticateOKBody, error) {
+	if m.loginFunc != nil {
+		return m.loginFunc(ctx, auth)
+	}
+	return registry.AuthenticateOKBody{Status: "Login Succeeded"}, nil
+}
+
+func testCmd() *cobra.Command {
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+	return cmd
+}
+
+func setupRegistryTest(t *testing.T) {
+	setupTestEnv(t)
+	newRegistryClient = func() (RegistryClient, error) {
+		return &mockRegistryClient{}, nil
+	}
+}
+
+func TestRegistryAdd(t *testing.T) {
+	setupRegistryTest(t)
+
 	registryUsername = "admin"
 	registryPassword = "secret123"
 
-	err := runRegistryAdd(nil, []string{"production"})
+	err := runRegistryAdd(testCmd(), []string{"registry.example.com"})
 	if err != nil {
 		t.Fatalf("runRegistryAdd failed: %v", err)
 	}
@@ -21,41 +48,75 @@ func TestRegistryAdd(t *testing.T) {
 		t.Fatalf("loadConfig failed: %v", err)
 	}
 
-	registry, exists := config.Registries["production"]
+	reg, exists := config.Registries["registry.example.com"]
 	if !exists {
-		t.Error("expected production registry to exist")
+		t.Error("expected registry.example.com to exist")
 	}
 
-	if registry.URL != "https://registry.example.com" {
-		t.Errorf("expected URL 'https://registry.example.com', got '%s'", registry.URL)
+	if reg.ServerAddress != "registry.example.com" {
+		t.Errorf("expected ServerAddress 'registry.example.com', got '%s'", reg.ServerAddress)
 	}
 
-	if registry.Username != "admin" {
-		t.Errorf("expected username 'admin', got '%s'", registry.Username)
+	if reg.Username != registryUsername {
+		t.Errorf("expected username '%s', got '%s'", registryUsername, reg.Username)
 	}
 
-	if registry.Password != "secret123" {
-		t.Errorf("expected password 'secret123', got '%s'", registry.Password)
+	if reg.Password != registryPassword {
+		t.Errorf("expected password '%s', got '%s'", registryPassword, reg.Password)
 	}
 }
 
-func TestRegistryAddUpdate(t *testing.T) {
+func TestRegistryAddWithIdentityToken(t *testing.T) {
 	setupTestEnv(t)
+	newRegistryClient = func() (RegistryClient, error) {
+		return &mockRegistryClient{
+			loginFunc: func(ctx context.Context, auth registry.AuthConfig) (registry.AuthenticateOKBody, error) {
+				return registry.AuthenticateOKBody{
+					Status:        "Login Succeeded",
+					IdentityToken: "token123",
+				}, nil
+			},
+		}, nil
+	}
 
-	registryURL = "https://old-registry.com"
-	registryUsername = "olduser"
-	registryPassword = "oldpass"
+	registryUsername = "user"
+	registryPassword = "pass"
 
-	err := runRegistryAdd(nil, []string{"myregistry"})
+	err := runRegistryAdd(testCmd(), []string{"gcr.io"})
 	if err != nil {
 		t.Fatalf("runRegistryAdd failed: %v", err)
 	}
 
-	registryURL = "https://new-registry.com"
+	config, err := loadConfig(".")
+	if err != nil {
+		t.Fatalf("loadConfig failed: %v", err)
+	}
+
+	reg := config.Registries["gcr.io"]
+	if reg.IdentityToken != "token123" {
+		t.Errorf("expected IdentityToken 'token123', got '%s'", reg.IdentityToken)
+	}
+
+	if reg.Password != "" {
+		t.Errorf("expected Password to be cleared when IdentityToken is set, got '%s'", reg.Password)
+	}
+}
+
+func TestRegistryAddUpdate(t *testing.T) {
+	setupRegistryTest(t)
+
+	registryUsername = "olduser"
+	registryPassword = "oldpass"
+
+	err := runRegistryAdd(testCmd(), []string{"myregistry.com"})
+	if err != nil {
+		t.Fatalf("runRegistryAdd failed: %v", err)
+	}
+
 	registryUsername = "newuser"
 	registryPassword = "newpass"
 
-	err = runRegistryAdd(nil, []string{"myregistry"})
+	err = runRegistryAdd(testCmd(), []string{"myregistry.com"})
 	if err != nil {
 		t.Fatalf("runRegistryAdd (update) failed: %v", err)
 	}
@@ -65,40 +126,34 @@ func TestRegistryAddUpdate(t *testing.T) {
 		t.Fatalf("loadConfig failed: %v", err)
 	}
 
-	registry := config.Registries["myregistry"]
-	if registry.URL != "https://new-registry.com" {
-		t.Errorf("expected URL 'https://new-registry.com', got '%s'", registry.URL)
+	reg := config.Registries["myregistry.com"]
+	if reg.Username != "newuser" {
+		t.Errorf("expected username 'newuser', got '%s'", reg.Username)
 	}
 
-	if registry.Username != "newuser" {
-		t.Errorf("expected username 'newuser', got '%s'", registry.Username)
-	}
-
-	if registry.Password != "newpass" {
-		t.Errorf("expected password 'newpass', got '%s'", registry.Password)
+	if reg.Password != "newpass" {
+		t.Errorf("expected password 'newpass', got '%s'", reg.Password)
 	}
 }
 
 func TestRegistryList(t *testing.T) {
-	setupTestEnv(t)
+	setupRegistryTest(t)
 
 	registries := map[string]struct {
-		url      string
 		username string
 		password string
 	}{
-		"docker": {"https://hub.docker.com", "dockeruser", "dockerpass"},
-		"gcr":    {"https://gcr.io", "gcruser", "gcrpass"},
-		"ecr":    {"https://ecr.aws.com", "ecruser", "ecrpass"},
+		"hub.docker.com": {"dockeruser", "dockerpass"},
+		"gcr.io":         {"gcruser", "gcrpass"},
+		"ecr.aws.com":    {"ecruser", "ecrpass"},
 	}
 
-	for name, r := range registries {
-		registryURL = r.url
+	for server, r := range registries {
 		registryUsername = r.username
 		registryPassword = r.password
-		err := runRegistryAdd(nil, []string{name})
+		err := runRegistryAdd(testCmd(), []string{server})
 		if err != nil {
-			t.Fatalf("runRegistryAdd failed for %s: %v", name, err)
+			t.Fatalf("runRegistryAdd failed for %s: %v", server, err)
 		}
 	}
 
@@ -109,7 +164,7 @@ func TestRegistryList(t *testing.T) {
 }
 
 func TestRegistryListEmpty(t *testing.T) {
-	setupTestEnv(t)
+	setupRegistryTest(t)
 
 	err := runRegistryList(nil, nil)
 	if err != nil {
@@ -118,18 +173,17 @@ func TestRegistryListEmpty(t *testing.T) {
 }
 
 func TestRegistryRemove(t *testing.T) {
-	setupTestEnv(t)
+	setupRegistryTest(t)
 
-	registryURL = "https://temp-registry.com"
 	registryUsername = "tempuser"
 	registryPassword = "temppass"
 
-	err := runRegistryAdd(nil, []string{"temp-registry"})
+	err := runRegistryAdd(testCmd(), []string{"temp-registry.com"})
 	if err != nil {
 		t.Fatalf("runRegistryAdd failed: %v", err)
 	}
 
-	err = runRegistryRemove(nil, []string{"temp-registry"})
+	err = runRegistryRemove(nil, []string{"temp-registry.com"})
 	if err != nil {
 		t.Fatalf("runRegistryRemove failed: %v", err)
 	}
@@ -139,16 +193,35 @@ func TestRegistryRemove(t *testing.T) {
 		t.Fatalf("loadConfig failed: %v", err)
 	}
 
-	if _, exists := config.Registries["temp-registry"]; exists {
-		t.Error("expected temp-registry to be removed, but it still exists")
+	if _, exists := config.Registries["temp-registry.com"]; exists {
+		t.Error("expected temp-registry.com to be removed, but it still exists")
 	}
 }
 
 func TestRegistryRemoveNonExistent(t *testing.T) {
-	setupTestEnv(t)
+	setupRegistryTest(t)
 
 	err := runRegistryRemove(nil, []string{"non-existent"})
 	if err == nil {
 		t.Error("expected error when removing non-existent registry, got nil")
+	}
+}
+
+func TestRegistryLoginError(t *testing.T) {
+	setupTestEnv(t)
+	newRegistryClient = func() (RegistryClient, error) {
+		return &mockRegistryClient{
+			loginFunc: func(ctx context.Context, auth registry.AuthConfig) (registry.AuthenticateOKBody, error) {
+				return registry.AuthenticateOKBody{}, context.DeadlineExceeded
+			},
+		}, nil
+	}
+
+	registryUsername = "user"
+	registryPassword = "wrongpass"
+
+	err := runRegistryAdd(testCmd(), []string{"private.registry.com"})
+	if err == nil {
+		t.Error("expected error on login failure, got nil")
 	}
 }
