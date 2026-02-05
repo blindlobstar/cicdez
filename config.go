@@ -4,14 +4,15 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"github.com/docker/docker/api/types/registry"
 	"gopkg.in/yaml.v3"
 )
 
 var configPath string = filepath.Join(cicdezDir, "config.age")
 
 type Config struct {
-	Servers    map[string]Server   `yaml:"servers"`
-	Registries map[string]Registry `yaml:"registries"`
+	Servers    map[string]Server              `yaml:"servers"`
+	Registries map[string]registry.AuthConfig `yaml:"registries"`
 }
 
 type Server struct {
