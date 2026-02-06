@@ -1,0 +1,77 @@
+services:
+  web:
+    image: myregistry.com/myapp:{git.tag}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    prebuild:
+      - name: Test and Lint
+        runs-on: node:18
+        commands:
+          - name: Install dependencies
+            command: npm ci
+          - name: Run tests
+            command: npm test
+          - name: Lint code
+            command: npm run lint
+    sensitive:
+      - target: /app/.env
+        format: env
+        secrets:
+          - source: db_password
+            name: DB_PASSWORD
+          - source: api_key
+            name: API_KEY
+        uid: '1000'
+        gid: '1000'
+        mode: '0440'
+      - target: /app/secrets.json
+        format: json
+        secrets:
+          - source: jwt_secret
+            name: jwt_secret
+    local_configs:
+      - source: ./configs/nginx.conf
+        target: /etc/nginx/nginx.conf
+      - source: ./app/config.yaml
+        target: /app/config.yaml
+    ports:
+      - "8080:80"
+    networks:
+      - app-network
+    environment:
+      - NODE_ENV=production
+      - API_URL=https://api.example.com
+      - GIT_COMMIT={git.sha}
+    deploy:
+      replicas: 3
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: start-first
+
+  db:
+    image: postgres:15
+    sensitive:
+      - target: /run/secrets/postgres_password
+        format: raw
+        secrets:
+          - source: db_password
+        uid: '999'
+        gid: '999'
+        mode: '0440'
+    environment:
+      POSTGRES_DB: myapp
+      POSTGRES_USER: dbuser
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: overlay
+    attachable: true
+
+volumes:
+  db-data:
