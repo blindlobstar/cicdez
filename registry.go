@@ -6,17 +6,17 @@ import (
 	"os"
 	"sort"
 
-	"github.com/docker/docker/api/types/registry"
-	"github.com/docker/docker/client"
+	"github.com/moby/moby/api/types/registry"
+	"github.com/moby/moby/client"
 	"github.com/spf13/cobra"
 )
 
 type RegistryClient interface {
-	RegistryLogin(ctx context.Context, auth registry.AuthConfig) (registry.AuthenticateOKBody, error)
+	RegistryLogin(ctx context.Context, options client.RegistryLoginOptions) (client.RegistryLoginResult, error)
 }
 
 var newRegistryClient = func() (RegistryClient, error) {
-	return client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	return client.New(client.WithHostFromEnv(), client.WithAPIVersionNegotiation())
 }
 
 var registryCmd = &cobra.Command{
@@ -80,13 +80,18 @@ func runRegistryAdd(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create docker client: %w", err)
 	}
-	resp, err := dockerClient.RegistryLogin(cmd.Context(), authConfig)
+	loginOpts := client.RegistryLoginOptions{
+		Username:      registryUsername,
+		Password:      registryPassword,
+		ServerAddress: server,
+	}
+	resp, err := dockerClient.RegistryLogin(cmd.Context(), loginOpts)
 	if err != nil {
 		return err
 	}
-	if resp.IdentityToken != "" {
+	if resp.Auth.IdentityToken != "" {
 		authConfig.Password = ""
-		authConfig.IdentityToken = resp.IdentityToken
+		authConfig.IdentityToken = resp.Auth.IdentityToken
 	}
 
 	config, err := loadConfig(cwd)
@@ -104,8 +109,8 @@ func runRegistryAdd(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 
-	if resp.Status != "" {
-		fmt.Println(resp.Status)
+	if resp.Auth.Status != "" {
+		fmt.Println(resp.Auth.Status)
 	}
 
 	return nil

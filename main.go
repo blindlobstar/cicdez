@@ -24,6 +24,7 @@ func main() {
 	rootCmd.AddCommand(serverCmd)
 	rootCmd.AddCommand(registryCmd)
 	rootCmd.AddCommand(buildCmd)
+	rootCmd.AddCommand(deployCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
