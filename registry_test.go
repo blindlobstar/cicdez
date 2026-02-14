@@ -4,19 +4,20 @@ import (
 	"context"
 	"testing"
 
-	"github.com/docker/docker/api/types/registry"
+	"github.com/moby/moby/api/types/registry"
+	"github.com/moby/moby/client"
 	"github.com/spf13/cobra"
 )
 
 type mockRegistryClient struct {
-	loginFunc func(ctx context.Context, auth registry.AuthConfig) (registry.AuthenticateOKBody, error)
+	loginFunc func(ctx context.Context, opts client.RegistryLoginOptions) (client.RegistryLoginResult, error)
 }
 
-func (m *mockRegistryClient) RegistryLogin(ctx context.Context, auth registry.AuthConfig) (registry.AuthenticateOKBody, error) {
+func (m *mockRegistryClient) RegistryLogin(ctx context.Context, opts client.RegistryLoginOptions) (client.RegistryLoginResult, error) {
 	if m.loginFunc != nil {
-		return m.loginFunc(ctx, auth)
+		return m.loginFunc(ctx, opts)
 	}
-	return registry.AuthenticateOKBody{Status: "Login Succeeded"}, nil
+	return client.RegistryLoginResult{Auth: registry.AuthResponse{Status: "Login Succeeded"}}, nil
 }
 
 func testCmd() *cobra.Command {
@@ -70,10 +71,12 @@ func TestRegistryAddWithIdentityToken(t *testing.T) {
 	setupTestEnv(t)
 	newRegistryClient = func() (RegistryClient, error) {
 		return &mockRegistryClient{
-			loginFunc: func(ctx context.Context, auth registry.AuthConfig) (registry.AuthenticateOKBody, error) {
-				return registry.AuthenticateOKBody{
-					Status:        "Login Succeeded",
-					IdentityToken: "token123",
+			loginFunc: func(ctx context.Context, opts client.RegistryLoginOptions) (client.RegistryLoginResult, error) {
+				return client.RegistryLoginResult{
+					Auth: registry.AuthResponse{
+						Status:        "Login Succeeded",
+						IdentityToken: "token123",
+					},
 				}, nil
 			},
 		}, nil
@@ -211,8 +214,8 @@ func TestRegistryLoginError(t *testing.T) {
 	setupTestEnv(t)
 	newRegistryClient = func() (RegistryClient, error) {
 		return &mockRegistryClient{
-			loginFunc: func(ctx context.Context, auth registry.AuthConfig) (registry.AuthenticateOKBody, error) {
-				return registry.AuthenticateOKBody{}, context.DeadlineExceeded
+			loginFunc: func(ctx context.Context, opts client.RegistryLoginOptions) (client.RegistryLoginResult, error) {
+				return client.RegistryLoginResult{}, context.DeadlineExceeded
 			},
 		}, nil
 	}
