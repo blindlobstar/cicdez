@@ -74,13 +74,17 @@ func runDeploy(ctx context.Context, opts deployOptions, files []string) error {
 			return err
 		}
 
-		Deploy(ctx, dockerClient, project, DeployOptions{
+		err = Deploy(ctx, dockerClient, project, DeployOptions{
 			stack:        opts.stack,
 			prune:        opts.prune,
 			resolveImage: opts.resolveImage,
 			detach:       opts.detach,
 			quiet:        opts.quiet,
+			registries:   cfg.Registries,
 		})
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
