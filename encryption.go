@@ -13,8 +13,6 @@ import (
 
 const envAgeKeyPath = "CICDEZ_AGE_KEY_FILE"
 
-var recipientsPath string = filepath.Join(cicdezDir, "recipients.txt")
-
 var identity *age.X25519Identity
 
 func EncryptFile(path string, data []byte) error {
