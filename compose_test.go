@@ -59,7 +59,10 @@ func TestComposeParser(t *testing.T) {
 					t.Fatalf("expected 2 sensitive configs, got %d", len(webService.Sensitive))
 				}
 
-				envConfig := webService.Sensitive[0]
+				envConfig, ok := webService.Sensitive["app_env"]
+				if !ok {
+					t.Fatal("app_env sensitive config not found")
+				}
 				if envConfig.Target != "/app/.env" {
 					t.Errorf("expected target '/app/.env', got '%s'", envConfig.Target)
 				}
@@ -88,7 +91,10 @@ func TestComposeParser(t *testing.T) {
 					t.Fatalf("expected 2 local configs, got %d", len(webService.LocalConfigs))
 				}
 
-				nginxConfig := webService.LocalConfigs[0]
+				nginxConfig, ok := webService.LocalConfigs["nginx_conf"]
+				if !ok {
+					t.Fatal("nginx_conf local config not found")
+				}
 				if nginxConfig.Source != "./configs/nginx.conf" {
 					t.Errorf("expected source './configs/nginx.conf', got '%s'", nginxConfig.Source)
 				}
@@ -102,7 +108,10 @@ func TestComposeParser(t *testing.T) {
 					t.Fatalf("expected 1 sensitive config for db, got %d", len(dbService.Sensitive))
 				}
 
-				rawConfig := dbService.Sensitive[0]
+				rawConfig, ok := dbService.Sensitive["db_pass"]
+				if !ok {
+					t.Fatal("db_pass sensitive config not found")
+				}
 				if rawConfig.Format != "raw" {
 					t.Errorf("expected format 'raw', got '%s'", rawConfig.Format)
 				}
