@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"net/http"
 	"os"
@@ -702,9 +703,7 @@ func convertService(stack string, svc types.ServiceConfig, networks types.Networ
 
 func addStackLabel(stack string, labels types.Labels) map[string]string {
 	result := make(map[string]string)
-	for k, v := range labels {
-		result[k] = v
-	}
+	maps.Copy(result, labels)
 	result[labelNamespace] = stack
 	return result
 }
@@ -715,7 +714,7 @@ func createSecrets(ctx context.Context, apiClient client.APIClient, secrets []sw
 		switch {
 		case err == nil:
 			_, err := apiClient.SecretUpdate(ctx, res.Secret.ID, client.SecretUpdateOptions{
-				Version: res.Secret.Meta.Version,
+				Version: res.Secret.Version,
 				Spec:    secretSpec,
 			})
 			if err != nil {
@@ -741,7 +740,7 @@ func createConfigs(ctx context.Context, apiClient client.APIClient, configs []sw
 		switch {
 		case err == nil:
 			_, err := apiClient.ConfigUpdate(ctx, res.Config.ID, client.ConfigUpdateOptions{
-				Version: res.Config.Meta.Version,
+				Version: res.Config.Version,
 				Spec:    configSpec,
 			})
 			if err != nil {
