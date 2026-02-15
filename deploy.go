@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/compose-spec/compose-go/v2/types"
+	"github.com/moby/moby/client"
 	"github.com/spf13/cobra"
 )
 
@@ -25,6 +26,9 @@ var (
 	deployResolveImage string
 	deployDetach       bool
 	deployQuiet        bool
+	deployNoBuild      bool
+	deployNoCache      bool
+	deployPull         bool
 )
 
 func init() {
@@ -33,6 +37,9 @@ func init() {
 	deployCmd.Flags().StringVar(&deployResolveImage, "resolve-image", resolveImageAlways, "Query the registry to resolve image digest and supported platforms (\"always\", \"changed\", \"never\")")
 	deployCmd.Flags().BoolVar(&deployDetach, "detach", false, "Exit immediately instead of waiting for services to converge")
 	deployCmd.Flags().BoolVarP(&deployQuiet, "quiet", "q", false, "Suppress progress output")
+	deployCmd.Flags().BoolVar(&deployNoBuild, "no-build", false, "Skip building images before deploy")
+	deployCmd.Flags().BoolVar(&deployNoCache, "no-cache", false, "Do not use cache when building")
+	deployCmd.Flags().BoolVar(&deployPull, "pull", false, "Always pull newer versions of base images")
 }
 
 type deployOptions struct {
@@ -41,6 +48,9 @@ type deployOptions struct {
 	resolveImage string
 	detach       bool
 	quiet        bool
+	noBuild      bool
+	noCache      bool
+	pull         bool
 }
 
 func runDeployCommand(cmd *cobra.Command, args []string) error {
@@ -50,6 +60,9 @@ func runDeployCommand(cmd *cobra.Command, args []string) error {
 		resolveImage: deployResolveImage,
 		detach:       deployDetach,
 		quiet:        deployQuiet,
+		noBuild:      deployNoBuild,
+		noCache:      deployNoCache,
+		pull:         deployPull,
 	}
 
 	return runDeploy(cmd.Context(), opts, deployComposeFiles)
@@ -84,6 +97,27 @@ func runDeploy(ctx context.Context, opts deployOptions, files []string) error {
 		return fmt.Errorf("failed to process sensitive secrets: %w", err)
 	}
 
+	// Build and push images if not skipped
+	if !opts.noBuild && hasBuildConfig(project) {
+		dockerClient, err := client.New(client.WithHostFromEnv())
+		if err != nil {
+			return fmt.Errorf("failed to create local docker client: %w", err)
+		}
+		defer dockerClient.Close()
+
+		buildOpts := BuildOptions{
+			cwd:        cwd,
+			registries: cfg.Registries,
+			noCache:    opts.noCache,
+			pull:       opts.pull,
+			push:       true,
+		}
+
+		if err := Build(ctx, dockerClient, project, buildOpts); err != nil {
+			return fmt.Errorf("failed to build and push images: %w", err)
+		}
+	}
+
 	for _, server := range cfg.Servers {
 		dockerClient, err := NewDockerClientSSH(server.Host, server.User, []byte(server.Key))
 		if err != nil {
@@ -104,6 +138,15 @@ func runDeploy(ctx context.Context, opts deployOptions, files []string) error {
 	}
 
 	return nil
+}
+
+func hasBuildConfig(project types.Project) bool {
+	for _, svc := range project.Services {
+		if svc.Build != nil {
+			return true
+		}
+	}
+	return false
 }
 
 func processSensitiveSecrets(project *types.Project, allSecrets Secrets) error {
