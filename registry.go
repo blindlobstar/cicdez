@@ -16,7 +16,7 @@ type RegistryClient interface {
 }
 
 var newRegistryClient = func() (RegistryClient, error) {
-	return client.New(client.WithHostFromEnv(), client.WithAPIVersionNegotiation())
+	return client.New(client.WithHostFromEnv())
 }
 
 var registryCmd = &cobra.Command{
