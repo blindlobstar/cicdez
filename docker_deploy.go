@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -9,8 +11,10 @@ import (
 
 	"github.com/compose-spec/compose-go/v2/types"
 	"github.com/containerd/errdefs"
+	"github.com/distribution/reference"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
+	"github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/client"
 )
@@ -27,6 +31,7 @@ type DeployOptions struct {
 	resolveImage string
 	detach       bool
 	quiet        bool
+	registries   map[string]registry.AuthConfig
 }
 
 func Deploy(ctx context.Context, dockerClient client.APIClient, project types.Project, opts DeployOptions) error {
@@ -74,7 +79,7 @@ func Deploy(ctx context.Context, dockerClient client.APIClient, project types.Pr
 		return err
 	}
 
-	serviceIDs, err := deployServices(ctx, dockerClient, services, opts.stack, opts.resolveImage, opts.quiet)
+	serviceIDs, err := deployServices(ctx, dockerClient, services, opts.stack, opts.resolveImage, opts.registries, opts.quiet)
 	if err != nil {
 		return err
 	}
@@ -215,7 +220,7 @@ func createConfigs(ctx context.Context, apiClient client.APIClient, configs []sw
 	return nil
 }
 
-func deployServices(ctx context.Context, apiClient client.APIClient, services map[string]swarm.ServiceSpec, stack string, resolveImage string, quiet bool) ([]string, error) {
+func deployServices(ctx context.Context, apiClient client.APIClient, services map[string]swarm.ServiceSpec, stack string, resolveImage string, registries map[string]registry.AuthConfig, quiet bool) ([]string, error) {
 	res, err := apiClient.ServiceList(ctx, client.ServiceListOptions{Filters: getStackFilter(stack)})
 	if err != nil {
 		return nil, err
@@ -232,9 +237,13 @@ func deployServices(ctx context.Context, apiClient client.APIClient, services ma
 		name := scopeName(stack, internalName)
 		image := serviceSpec.TaskTemplate.ContainerSpec.Image
 
+		// Get encoded registry auth for the image
+		encodedAuth := getEncodedAuth(image, registries)
+
 		if svc, exists := existingServiceMap[name]; exists {
 			updateOpts := client.ServiceUpdateOptions{
-				Version: svc.Version,
+				Version:             svc.Version,
+				EncodedRegistryAuth: encodedAuth,
 			}
 
 			switch resolveImage {
@@ -273,8 +282,9 @@ func deployServices(ctx context.Context, apiClient client.APIClient, services ma
 			queryRegistry := resolveImage == resolveImageAlways || resolveImage == resolveImageChanged
 
 			response, err := apiClient.ServiceCreate(ctx, client.ServiceCreateOptions{
-				Spec:          serviceSpec,
-				QueryRegistry: queryRegistry,
+				Spec:                serviceSpec,
+				EncodedRegistryAuth: encodedAuth,
+				QueryRegistry:       queryRegistry,
 			})
 			if err != nil {
 				return nil, fmt.Errorf("failed to create service %s: %w", name, err)
@@ -285,6 +295,30 @@ func deployServices(ctx context.Context, apiClient client.APIClient, services ma
 	}
 
 	return serviceIDs, nil
+}
+
+func getEncodedAuth(image string, registries map[string]registry.AuthConfig) string {
+	if len(registries) == 0 {
+		return ""
+	}
+
+	ref, err := reference.ParseNormalizedNamed(image)
+	if err != nil {
+		return ""
+	}
+
+	registryHost := reference.Domain(ref)
+	auth, ok := registries[registryHost]
+	if !ok {
+		return ""
+	}
+
+	authBytes, err := json.Marshal(auth)
+	if err != nil {
+		return ""
+	}
+
+	return base64.URLEncoding.EncodeToString(authBytes)
 }
 
 func waitOnServices(ctx context.Context, dockerClient client.APIClient, serviceIDs []string, quiet bool) error {
