@@ -8,53 +8,62 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var serverCmd = &cobra.Command{
-	Use:   "server",
-	Short: "Manage deployment servers",
-	Long:  "Add, list, and remove servers configured for deployment",
+type serverAddOptions struct {
+	host string
+	user string
+	key  string
 }
 
-var serverAddCmd = &cobra.Command{
-	Use:   "add <name>",
-	Short: "Add or update a server",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runServerAdd,
+func newServerCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "server",
+		Short: "Manage deployment servers",
+		Long:  "Add, list, and remove servers configured for deployment",
+	}
+	cmd.AddCommand(newServerAddCommand())
+	cmd.AddCommand(newServerListCommand())
+	cmd.AddCommand(newServerRemoveCommand())
+	return cmd
 }
 
-var serverListCmd = &cobra.Command{
-	Use:     "list",
-	Aliases: []string{"ls"},
-	Short:   "List all servers",
-	RunE:    runServerList,
+func newServerAddCommand() *cobra.Command {
+	opts := &serverAddOptions{}
+	cmd := &cobra.Command{
+		Use:   "add <name>",
+		Short: "Add or update a server",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runServerAdd(cmd, args, opts)
+		},
+	}
+	cmd.Flags().StringVar(&opts.host, "host", "", "Server hostname or IP address (required)")
+	cmd.Flags().StringVar(&opts.user, "user", "", "SSH user (required)")
+	cmd.Flags().StringVar(&opts.key, "key", "", "SSH private key (optional)")
+	cmd.MarkFlagRequired("host")
+	cmd.MarkFlagRequired("user")
+	return cmd
 }
 
-var serverRemoveCmd = &cobra.Command{
-	Use:     "remove <name>",
-	Aliases: []string{"rm", "delete"},
-	Short:   "Remove a server",
-	Args:    cobra.ExactArgs(1),
-	RunE:    runServerRemove,
+func newServerListCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:     "list",
+		Aliases: []string{"ls"},
+		Short:   "List all servers",
+		RunE:    runServerList,
+	}
 }
 
-var (
-	serverHost string
-	serverUser string
-	serverKey  string
-)
-
-func init() {
-	serverAddCmd.Flags().StringVar(&serverHost, "host", "", "Server hostname or IP address (required)")
-	serverAddCmd.Flags().StringVar(&serverUser, "user", "", "SSH user (required)")
-	serverAddCmd.Flags().StringVar(&serverKey, "key", "", "SSH private key (optional)")
-	serverAddCmd.MarkFlagRequired("host")
-	serverAddCmd.MarkFlagRequired("user")
-
-	serverCmd.AddCommand(serverAddCmd)
-	serverCmd.AddCommand(serverListCmd)
-	serverCmd.AddCommand(serverRemoveCmd)
+func newServerRemoveCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:     "remove <name>",
+		Aliases: []string{"rm", "delete"},
+		Short:   "Remove a server",
+		Args:    cobra.ExactArgs(1),
+		RunE:    runServerRemove,
+	}
 }
 
-func runServerAdd(cmd *cobra.Command, args []string) error {
+func runServerAdd(cmd *cobra.Command, args []string, opts *serverAddOptions) error {
 	name := args[0]
 
 	cwd, err := os.Getwd()
@@ -72,9 +81,9 @@ func runServerAdd(cmd *cobra.Command, args []string) error {
 	}
 
 	config.Servers[name] = Server{
-		Host: serverHost,
-		User: serverUser,
-		Key:  serverKey,
+		Host: opts.host,
+		User: opts.user,
+		Key:  opts.key,
 	}
 
 	if err := saveConfig(cwd, config); err != nil {

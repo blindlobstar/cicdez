@@ -10,45 +10,53 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var secretCmd = &cobra.Command{
-	Use:   "secret",
-	Short: "Manage encrypted secrets",
-	Long:  "Add, list, edit, and remove encrypted secrets stored in .cicdez/secrets.age",
+func newSecretCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "secret",
+		Short: "Manage encrypted secrets",
+		Long:  "Add, list, edit, and remove encrypted secrets stored in .cicdez/secrets.age",
+	}
+	cmd.AddCommand(newSecretAddCommand())
+	cmd.AddCommand(newSecretListCommand())
+	cmd.AddCommand(newSecretEditCommand())
+	cmd.AddCommand(newSecretRemoveCommand())
+	return cmd
 }
 
-var secretAddCmd = &cobra.Command{
-	Use:   "add <name> <value>",
-	Short: "Add or update a secret",
-	Args:  cobra.ExactArgs(2),
-	RunE:  runSecretAdd,
+func newSecretAddCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "add <name> <value>",
+		Short: "Add or update a secret",
+		Args:  cobra.ExactArgs(2),
+		RunE:  runSecretAdd,
+	}
 }
 
-var secretListCmd = &cobra.Command{
-	Use:     "list",
-	Aliases: []string{"ls"},
-	Short:   "List all secret names",
-	RunE:    runSecretList,
+func newSecretListCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:     "list",
+		Aliases: []string{"ls"},
+		Short:   "List all secret names",
+		RunE:    runSecretList,
+	}
 }
 
-var secretEditCmd = &cobra.Command{
-	Use:   "edit",
-	Short: "Edit all secrets using $EDITOR",
-	RunE:  runSecretEdit,
+func newSecretEditCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "edit",
+		Short: "Edit all secrets using $EDITOR",
+		RunE:  runSecretEdit,
+	}
 }
 
-var secretRemoveCmd = &cobra.Command{
-	Use:     "remove <name>",
-	Aliases: []string{"rm", "delete"},
-	Short:   "Remove a secret",
-	Args:    cobra.ExactArgs(1),
-	RunE:    runSecretRemove,
-}
-
-func init() {
-	secretCmd.AddCommand(secretAddCmd)
-	secretCmd.AddCommand(secretListCmd)
-	secretCmd.AddCommand(secretEditCmd)
-	secretCmd.AddCommand(secretRemoveCmd)
+func newSecretRemoveCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:     "remove <name>",
+		Aliases: []string{"rm", "delete"},
+		Short:   "Remove a secret",
+		Args:    cobra.ExactArgs(1),
+		RunE:    runSecretRemove,
+	}
 }
 
 func runSecretAdd(cmd *cobra.Command, args []string) error {

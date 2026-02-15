@@ -12,34 +12,37 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var deployCmd = &cobra.Command{
-	Use:   "deploy [stack]",
-	Short: "Deploy a stack to Docker Swarm",
-	Long:  "Deploy services defined in compose file to Docker Swarm cluster",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runDeployCommand,
+type deployCommandOptions struct {
+	composeFiles []string
+	prune        bool
+	resolveImage string
+	detach       bool
+	quiet        bool
+	noBuild      bool
+	noCache      bool
+	pull         bool
 }
 
-var (
-	deployComposeFiles []string
-	deployPrune        bool
-	deployResolveImage string
-	deployDetach       bool
-	deployQuiet        bool
-	deployNoBuild      bool
-	deployNoCache      bool
-	deployPull         bool
-)
-
-func init() {
-	deployCmd.Flags().StringArrayVarP(&deployComposeFiles, "file", "f", []string{"compose.yaml"}, "Compose file path(s)")
-	deployCmd.Flags().BoolVar(&deployPrune, "prune", false, "Prune services that are no longer referenced")
-	deployCmd.Flags().StringVar(&deployResolveImage, "resolve-image", resolveImageAlways, "Query the registry to resolve image digest and supported platforms (\"always\", \"changed\", \"never\")")
-	deployCmd.Flags().BoolVar(&deployDetach, "detach", false, "Exit immediately instead of waiting for services to converge")
-	deployCmd.Flags().BoolVarP(&deployQuiet, "quiet", "q", false, "Suppress progress output")
-	deployCmd.Flags().BoolVar(&deployNoBuild, "no-build", false, "Skip building images before deploy")
-	deployCmd.Flags().BoolVar(&deployNoCache, "no-cache", false, "Do not use cache when building")
-	deployCmd.Flags().BoolVar(&deployPull, "pull", false, "Always pull newer versions of base images")
+func newDeployCommand() *cobra.Command {
+	opts := &deployCommandOptions{}
+	cmd := &cobra.Command{
+		Use:   "deploy [stack]",
+		Short: "Deploy a stack to Docker Swarm",
+		Long:  "Deploy services defined in compose file to Docker Swarm cluster",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runDeployCommand(cmd, args, opts)
+		},
+	}
+	cmd.Flags().StringArrayVarP(&opts.composeFiles, "file", "f", []string{"compose.yaml"}, "Compose file path(s)")
+	cmd.Flags().BoolVar(&opts.prune, "prune", false, "Prune services that are no longer referenced")
+	cmd.Flags().StringVar(&opts.resolveImage, "resolve-image", resolveImageAlways, "Query the registry to resolve image digest and supported platforms (\"always\", \"changed\", \"never\")")
+	cmd.Flags().BoolVar(&opts.detach, "detach", false, "Exit immediately instead of waiting for services to converge")
+	cmd.Flags().BoolVarP(&opts.quiet, "quiet", "q", false, "Suppress progress output")
+	cmd.Flags().BoolVar(&opts.noBuild, "no-build", false, "Skip building images before deploy")
+	cmd.Flags().BoolVar(&opts.noCache, "no-cache", false, "Do not use cache when building")
+	cmd.Flags().BoolVar(&opts.pull, "pull", false, "Always pull newer versions of base images")
+	return cmd
 }
 
 type deployOptions struct {
@@ -53,19 +56,19 @@ type deployOptions struct {
 	pull         bool
 }
 
-func runDeployCommand(cmd *cobra.Command, args []string) error {
+func runDeployCommand(cmd *cobra.Command, args []string, cmdOpts *deployCommandOptions) error {
 	opts := deployOptions{
 		stack:        args[0],
-		prune:        deployPrune,
-		resolveImage: deployResolveImage,
-		detach:       deployDetach,
-		quiet:        deployQuiet,
-		noBuild:      deployNoBuild,
-		noCache:      deployNoCache,
-		pull:         deployPull,
+		prune:        cmdOpts.prune,
+		resolveImage: cmdOpts.resolveImage,
+		detach:       cmdOpts.detach,
+		quiet:        cmdOpts.quiet,
+		noBuild:      cmdOpts.noBuild,
+		noCache:      cmdOpts.noCache,
+		pull:         cmdOpts.pull,
 	}
 
-	return runDeploy(cmd.Context(), opts, deployComposeFiles)
+	return runDeploy(cmd.Context(), opts, cmdOpts.composeFiles)
 }
 
 func runDeploy(ctx context.Context, opts deployOptions, files []string) error {
