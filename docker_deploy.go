@@ -69,7 +69,7 @@ func Deploy(ctx context.Context, dockerClient client.APIClient, project types.Pr
 		return err
 	}
 
-	services, err := convertServices(opts.stack, project)
+	services, err := convertServices(ctx, dockerClient, opts.stack, project)
 	if err != nil {
 		return err
 	}
