@@ -141,7 +141,7 @@ func TestComposeParser(t *testing.T) {
 					t.Errorf("expected DEBUG=true, got DEBUG=%s", *debugValue)
 				}
 
-				if webService.Prebuild == nil || len(webService.Prebuild) == 0 {
+				if len(webService.Prebuild) == 0 {
 					t.Error("prebuild should be preserved from base file")
 				}
 			},
