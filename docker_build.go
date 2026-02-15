@@ -21,6 +21,9 @@ type BuildOptions struct {
 	services   map[string]bool
 	cwd        string
 	registries map[string]registry.AuthConfig
+	noCache    bool
+	pull       bool
+	push       bool
 }
 
 func Build(ctx context.Context, dockerClient client.APIClient, project types.Project, opt BuildOptions) error {
@@ -40,11 +43,11 @@ func Build(ctx context.Context, dockerClient client.APIClient, project types.Pro
 
 		fmt.Printf("Building %s...\n", imageName)
 
-		if err := buildImage(ctx, dockerClient, opt.cwd, imageName, svc.Build); err != nil {
+		if err := buildImage(ctx, dockerClient, imageName, svc.Build, opt); err != nil {
 			return fmt.Errorf("failed to build %s: %w", svc.Name, err)
 		}
 
-		if buildPush {
+		if opt.push {
 			fmt.Printf("Pushing %s...\n", imageName)
 			if err := pushImage(ctx, dockerClient, imageName, opt.registries); err != nil {
 				return fmt.Errorf("failed to push %s: %w", svc.Name, err)
@@ -66,14 +69,14 @@ func readIgnorePatterns(buildContext string) []string {
 	return patterns
 }
 
-func buildImage(ctx context.Context, dockerClient client.APIClient, cwd, imageName string, build *types.BuildConfig) error {
+func buildImage(ctx context.Context, dockerClient client.APIClient, imageName string, build *types.BuildConfig, opt BuildOptions) error {
 	buildContext := build.Context
 	if buildContext == "" {
 		buildContext = "."
 	}
 
 	if !filepath.IsAbs(buildContext) {
-		buildContext = filepath.Join(cwd, buildContext)
+		buildContext = filepath.Join(opt.cwd, buildContext)
 	}
 
 	dockerfile := build.Dockerfile
@@ -95,8 +98,8 @@ func buildImage(ctx context.Context, dockerClient client.APIClient, cwd, imageNa
 		Tags:       []string{imageName},
 		Dockerfile: dockerfile,
 		BuildArgs:  build.Args,
-		NoCache:    buildNoCache || build.NoCache,
-		PullParent: buildPull || build.Pull,
+		NoCache:    opt.noCache || build.NoCache,
+		PullParent: opt.pull || build.Pull,
 		Remove:     true,
 		Target:     build.Target,
 	}

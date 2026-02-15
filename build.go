@@ -58,33 +58,14 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		servicesToBuild[arg] = true
 	}
 
-	for _, svc := range project.Services {
-		if len(servicesToBuild) > 0 && !servicesToBuild[svc.Name] {
-			continue
-		}
-
-		if svc.Build == nil {
-			continue
-		}
-
-		imageName := svc.Image
-		if imageName == "" {
-			imageName = project.Name + "_" + svc.Name
-		}
-
-		fmt.Printf("Building %s...\n", imageName)
-
-		if err := buildImage(ctx, dockerClient, cwd, imageName, svc.Build); err != nil {
-			return fmt.Errorf("failed to build %s: %w", svc.Name, err)
-		}
-
-		if buildPush {
-			fmt.Printf("Pushing %s...\n", imageName)
-			if err := pushImage(ctx, dockerClient, imageName, config.Registries); err != nil {
-				return fmt.Errorf("failed to push %s: %w", svc.Name, err)
-			}
-		}
+	opts := BuildOptions{
+		services:   servicesToBuild,
+		cwd:        cwd,
+		registries: config.Registries,
+		noCache:    buildNoCache,
+		pull:       buildPull,
+		push:       buildPush,
 	}
 
-	return nil
+	return Build(ctx, dockerClient, project, opts)
 }
