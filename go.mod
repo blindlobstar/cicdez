@@ -54,4 +54,4 @@ require (
 	golang.org/x/text v0.29.0 // indirect
 )
 
-replace github.com/compose-spec/compose-go/v2 => github.com/blindlobstar/compose-go/v2 v2.9.1-cicdez.3
+replace github.com/compose-spec/compose-go/v2 => github.com/blindlobstar/compose-go/v2 v2.9.1-cicdez.4

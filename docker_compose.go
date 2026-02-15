@@ -2,11 +2,14 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"maps"
 	"net/netip"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -832,4 +835,41 @@ func addStackLabel(stack string, labels types.Labels) map[string]string {
 	maps.Copy(result, labels)
 	result[labelNamespace] = stack
 	return result
+}
+
+func processLocalConfigs(project *types.Project, cwd string) error {
+	if project.Configs == nil {
+		project.Configs = make(types.Configs)
+	}
+
+	for svcName, svc := range project.Services {
+		for name, localConfig := range svc.LocalConfigs {
+			sourcePath := localConfig.Source
+			if !filepath.IsAbs(sourcePath) {
+				sourcePath = filepath.Join(cwd, sourcePath)
+			}
+
+			content, err := os.ReadFile(sourcePath)
+			if err != nil {
+				return fmt.Errorf("failed to read local config file %s for service %s: %w", localConfig.Source, svc.Name, err)
+			}
+
+			hash := sha256.Sum256(content)
+			hashStr := hex.EncodeToString(hash[:])[:8]
+
+			configName := fmt.Sprintf("%s_%s", name, hashStr)
+
+			project.Configs[configName] = types.ConfigObjConfig{
+				Content: string(content),
+			}
+
+			svc.Configs = append(svc.Configs, types.ServiceConfigObjConfig{
+				Source: configName,
+				Target: localConfig.Target,
+			})
+		}
+		project.Services[svcName] = svc
+	}
+
+	return nil
 }

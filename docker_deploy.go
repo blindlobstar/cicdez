@@ -237,7 +237,6 @@ func deployServices(ctx context.Context, apiClient client.APIClient, services ma
 		name := scopeName(stack, internalName)
 		image := serviceSpec.TaskTemplate.ContainerSpec.Image
 
-		// Get encoded registry auth for the image
 		encodedAuth := getEncodedAuth(image, registries)
 
 		if svc, exists := existingServiceMap[name]; exists {
