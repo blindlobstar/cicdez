@@ -15,55 +15,73 @@ type RegistryClient interface {
 	RegistryLogin(ctx context.Context, options client.RegistryLoginOptions) (client.RegistryLoginResult, error)
 }
 
-var newRegistryClient = func() (RegistryClient, error) {
+type RegistryClientFactory func() (RegistryClient, error)
+
+func DefaultRegistryClientFactory() (RegistryClient, error) {
 	return client.New(client.WithHostFromEnv())
 }
 
-var registryCmd = &cobra.Command{
-	Use:   "registry",
-	Short: "Manage Docker registry credentials",
-	Long:  "Add, list, and remove Docker registry authentication credentials",
+type registryAddOptions struct {
+	username      string
+	password      string
+	clientFactory RegistryClientFactory
 }
 
-var registryAddCmd = &cobra.Command{
-	Use:   "add <server>",
-	Short: "Add or update a registry",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runRegistryAdd,
+func newRegistryCommand() *cobra.Command {
+	return newRegistryCommandWithFactory(DefaultRegistryClientFactory)
 }
 
-var registryListCmd = &cobra.Command{
-	Use:     "list",
-	Aliases: []string{"ls"},
-	Short:   "List all registries",
-	RunE:    runRegistryList,
+func newRegistryCommandWithFactory(clientFactory RegistryClientFactory) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "registry",
+		Short: "Manage Docker registry credentials",
+		Long:  "Add, list, and remove Docker registry authentication credentials",
+	}
+	cmd.AddCommand(newRegistryAddCommand(clientFactory))
+	cmd.AddCommand(newRegistryListCommand())
+	cmd.AddCommand(newRegistryRemoveCommand())
+	return cmd
 }
 
-var registryRemoveCmd = &cobra.Command{
-	Use:     "remove <server>",
-	Aliases: []string{"rm", "delete"},
-	Short:   "Remove a registry",
-	Args:    cobra.ExactArgs(1),
-	RunE:    runRegistryRemove,
+func newRegistryAddCommand(clientFactory RegistryClientFactory) *cobra.Command {
+	opts := &registryAddOptions{
+		clientFactory: clientFactory,
+	}
+	cmd := &cobra.Command{
+		Use:   "add <server>",
+		Short: "Add or update a registry",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runRegistryAdd(cmd, args, opts)
+		},
+	}
+	cmd.Flags().StringVar(&opts.username, "username", "", "Registry username (required)")
+	cmd.Flags().StringVar(&opts.password, "password", "", "Registry password (required)")
+	cmd.MarkFlagRequired("username")
+	cmd.MarkFlagRequired("password")
+	return cmd
 }
 
-var (
-	registryUsername string
-	registryPassword string
-)
-
-func init() {
-	registryAddCmd.Flags().StringVar(&registryUsername, "username", "", "Registry username (required)")
-	registryAddCmd.Flags().StringVar(&registryPassword, "password", "", "Registry password (required)")
-	registryAddCmd.MarkFlagRequired("username")
-	registryAddCmd.MarkFlagRequired("password")
-
-	registryCmd.AddCommand(registryAddCmd)
-	registryCmd.AddCommand(registryListCmd)
-	registryCmd.AddCommand(registryRemoveCmd)
+func newRegistryListCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:     "list",
+		Aliases: []string{"ls"},
+		Short:   "List all registries",
+		RunE:    runRegistryList,
+	}
 }
 
-func runRegistryAdd(cmd *cobra.Command, args []string) error {
+func newRegistryRemoveCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:     "remove <server>",
+		Aliases: []string{"rm", "delete"},
+		Short:   "Remove a registry",
+		Args:    cobra.ExactArgs(1),
+		RunE:    runRegistryRemove,
+	}
+}
+
+func runRegistryAdd(cmd *cobra.Command, args []string, opts *registryAddOptions) error {
 	server := args[0]
 
 	cwd, err := os.Getwd()
@@ -72,17 +90,17 @@ func runRegistryAdd(cmd *cobra.Command, args []string) error {
 	}
 
 	authConfig := registry.AuthConfig{
-		Username:      registryUsername,
-		Password:      registryPassword,
+		Username:      opts.username,
+		Password:      opts.password,
 		ServerAddress: server,
 	}
-	dockerClient, err := newRegistryClient()
+	dockerClient, err := opts.clientFactory()
 	if err != nil {
 		return fmt.Errorf("failed to create docker client: %w", err)
 	}
 	loginOpts := client.RegistryLoginOptions{
-		Username:      registryUsername,
-		Password:      registryPassword,
+		Username:      opts.username,
+		Password:      opts.password,
 		ServerAddress: server,
 	}
 	resp, err := dockerClient.RegistryLogin(cmd.Context(), loginOpts)

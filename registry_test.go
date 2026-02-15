@@ -26,20 +26,20 @@ func testCmd() *cobra.Command {
 	return cmd
 }
 
-func setupRegistryTest(t *testing.T) {
-	setupTestEnv(t)
-	newRegistryClient = func() (RegistryClient, error) {
-		return &mockRegistryClient{}, nil
-	}
+func mockClientFactory() (RegistryClient, error) {
+	return &mockRegistryClient{}, nil
 }
 
 func TestRegistryAdd(t *testing.T) {
-	setupRegistryTest(t)
+	setupTestEnv(t)
 
-	registryUsername = "admin"
-	registryPassword = "secret123"
+	opts := &registryAddOptions{
+		username:      "admin",
+		password:      "secret123",
+		clientFactory: mockClientFactory,
+	}
 
-	err := runRegistryAdd(testCmd(), []string{"registry.example.com"})
+	err := runRegistryAdd(testCmd(), []string{"registry.example.com"}, opts)
 	if err != nil {
 		t.Fatalf("runRegistryAdd failed: %v", err)
 	}
@@ -58,18 +58,19 @@ func TestRegistryAdd(t *testing.T) {
 		t.Errorf("expected ServerAddress 'registry.example.com', got '%s'", reg.ServerAddress)
 	}
 
-	if reg.Username != registryUsername {
-		t.Errorf("expected username '%s', got '%s'", registryUsername, reg.Username)
+	if reg.Username != "admin" {
+		t.Errorf("expected username 'admin', got '%s'", reg.Username)
 	}
 
-	if reg.Password != registryPassword {
-		t.Errorf("expected password '%s', got '%s'", registryPassword, reg.Password)
+	if reg.Password != "secret123" {
+		t.Errorf("expected password 'secret123', got '%s'", reg.Password)
 	}
 }
 
 func TestRegistryAddWithIdentityToken(t *testing.T) {
 	setupTestEnv(t)
-	newRegistryClient = func() (RegistryClient, error) {
+
+	tokenFactory := func() (RegistryClient, error) {
 		return &mockRegistryClient{
 			loginFunc: func(ctx context.Context, opts client.RegistryLoginOptions) (client.RegistryLoginResult, error) {
 				return client.RegistryLoginResult{
@@ -82,10 +83,13 @@ func TestRegistryAddWithIdentityToken(t *testing.T) {
 		}, nil
 	}
 
-	registryUsername = "user"
-	registryPassword = "pass"
+	opts := &registryAddOptions{
+		username:      "user",
+		password:      "pass",
+		clientFactory: tokenFactory,
+	}
 
-	err := runRegistryAdd(testCmd(), []string{"gcr.io"})
+	err := runRegistryAdd(testCmd(), []string{"gcr.io"}, opts)
 	if err != nil {
 		t.Fatalf("runRegistryAdd failed: %v", err)
 	}
@@ -106,20 +110,26 @@ func TestRegistryAddWithIdentityToken(t *testing.T) {
 }
 
 func TestRegistryAddUpdate(t *testing.T) {
-	setupRegistryTest(t)
+	setupTestEnv(t)
 
-	registryUsername = "olduser"
-	registryPassword = "oldpass"
+	opts := &registryAddOptions{
+		username:      "olduser",
+		password:      "oldpass",
+		clientFactory: mockClientFactory,
+	}
 
-	err := runRegistryAdd(testCmd(), []string{"myregistry.com"})
+	err := runRegistryAdd(testCmd(), []string{"myregistry.com"}, opts)
 	if err != nil {
 		t.Fatalf("runRegistryAdd failed: %v", err)
 	}
 
-	registryUsername = "newuser"
-	registryPassword = "newpass"
+	opts = &registryAddOptions{
+		username:      "newuser",
+		password:      "newpass",
+		clientFactory: mockClientFactory,
+	}
 
-	err = runRegistryAdd(testCmd(), []string{"myregistry.com"})
+	err = runRegistryAdd(testCmd(), []string{"myregistry.com"}, opts)
 	if err != nil {
 		t.Fatalf("runRegistryAdd (update) failed: %v", err)
 	}
@@ -140,7 +150,7 @@ func TestRegistryAddUpdate(t *testing.T) {
 }
 
 func TestRegistryList(t *testing.T) {
-	setupRegistryTest(t)
+	setupTestEnv(t)
 
 	registries := map[string]struct {
 		username string
@@ -152,9 +162,12 @@ func TestRegistryList(t *testing.T) {
 	}
 
 	for server, r := range registries {
-		registryUsername = r.username
-		registryPassword = r.password
-		err := runRegistryAdd(testCmd(), []string{server})
+		opts := &registryAddOptions{
+			username:      r.username,
+			password:      r.password,
+			clientFactory: mockClientFactory,
+		}
+		err := runRegistryAdd(testCmd(), []string{server}, opts)
 		if err != nil {
 			t.Fatalf("runRegistryAdd failed for %s: %v", server, err)
 		}
@@ -167,7 +180,7 @@ func TestRegistryList(t *testing.T) {
 }
 
 func TestRegistryListEmpty(t *testing.T) {
-	setupRegistryTest(t)
+	setupTestEnv(t)
 
 	err := runRegistryList(nil, nil)
 	if err != nil {
@@ -176,12 +189,15 @@ func TestRegistryListEmpty(t *testing.T) {
 }
 
 func TestRegistryRemove(t *testing.T) {
-	setupRegistryTest(t)
+	setupTestEnv(t)
 
-	registryUsername = "tempuser"
-	registryPassword = "temppass"
+	opts := &registryAddOptions{
+		username:      "tempuser",
+		password:      "temppass",
+		clientFactory: mockClientFactory,
+	}
 
-	err := runRegistryAdd(testCmd(), []string{"temp-registry.com"})
+	err := runRegistryAdd(testCmd(), []string{"temp-registry.com"}, opts)
 	if err != nil {
 		t.Fatalf("runRegistryAdd failed: %v", err)
 	}
@@ -202,7 +218,7 @@ func TestRegistryRemove(t *testing.T) {
 }
 
 func TestRegistryRemoveNonExistent(t *testing.T) {
-	setupRegistryTest(t)
+	setupTestEnv(t)
 
 	err := runRegistryRemove(nil, []string{"non-existent"})
 	if err == nil {
@@ -212,7 +228,8 @@ func TestRegistryRemoveNonExistent(t *testing.T) {
 
 func TestRegistryLoginError(t *testing.T) {
 	setupTestEnv(t)
-	newRegistryClient = func() (RegistryClient, error) {
+
+	errorFactory := func() (RegistryClient, error) {
 		return &mockRegistryClient{
 			loginFunc: func(ctx context.Context, opts client.RegistryLoginOptions) (client.RegistryLoginResult, error) {
 				return client.RegistryLoginResult{}, context.DeadlineExceeded
@@ -220,10 +237,13 @@ func TestRegistryLoginError(t *testing.T) {
 		}, nil
 	}
 
-	registryUsername = "user"
-	registryPassword = "wrongpass"
+	opts := &registryAddOptions{
+		username:      "user",
+		password:      "wrongpass",
+		clientFactory: errorFactory,
+	}
 
-	err := runRegistryAdd(testCmd(), []string{"private.registry.com"})
+	err := runRegistryAdd(testCmd(), []string{"private.registry.com"}, opts)
 	if err == nil {
 		t.Error("expected error on login failure, got nil")
 	}

@@ -7,11 +7,13 @@ import (
 func TestServerAdd(t *testing.T) {
 	setupTestEnv(t)
 
-	serverHost = "192.168.1.100"
-	serverUser = "deploy"
-	serverKey = ""
+	opts := &serverAddOptions{
+		host: "192.168.1.100",
+		user: "deploy",
+		key:  "",
+	}
 
-	err := runServerAdd(nil, []string{"production"})
+	err := runServerAdd(nil, []string{"production"}, opts)
 	if err != nil {
 		t.Fatalf("runServerAdd failed: %v", err)
 	}
@@ -38,11 +40,13 @@ func TestServerAdd(t *testing.T) {
 func TestServerAddWithKey(t *testing.T) {
 	setupTestEnv(t)
 
-	serverHost = "10.0.0.5"
-	serverUser = "ubuntu"
-	serverKey = "-----BEGIN PRIVATE KEY-----\ntest_key\n-----END PRIVATE KEY-----"
+	opts := &serverAddOptions{
+		host: "10.0.0.5",
+		user: "ubuntu",
+		key:  "-----BEGIN PRIVATE KEY-----\ntest_key\n-----END PRIVATE KEY-----",
+	}
 
-	err := runServerAdd(nil, []string{"staging"})
+	err := runServerAdd(nil, []string{"staging"}, opts)
 	if err != nil {
 		t.Fatalf("runServerAdd failed: %v", err)
 	}
@@ -65,20 +69,24 @@ func TestServerAddWithKey(t *testing.T) {
 func TestServerAddUpdate(t *testing.T) {
 	setupTestEnv(t)
 
-	serverHost = "old-host.example.com"
-	serverUser = "olduser"
-	serverKey = ""
+	opts := &serverAddOptions{
+		host: "old-host.example.com",
+		user: "olduser",
+		key:  "",
+	}
 
-	err := runServerAdd(nil, []string{"myserver"})
+	err := runServerAdd(nil, []string{"myserver"}, opts)
 	if err != nil {
 		t.Fatalf("runServerAdd failed: %v", err)
 	}
 
-	serverHost = "new-host.example.com"
-	serverUser = "newuser"
-	serverKey = "new_key"
+	opts = &serverAddOptions{
+		host: "new-host.example.com",
+		user: "newuser",
+		key:  "new_key",
+	}
 
-	err = runServerAdd(nil, []string{"myserver"})
+	err = runServerAdd(nil, []string{"myserver"}, opts)
 	if err != nil {
 		t.Fatalf("runServerAdd (update) failed: %v", err)
 	}
@@ -115,10 +123,12 @@ func TestServerList(t *testing.T) {
 	}
 
 	for name, s := range servers {
-		serverHost = s.host
-		serverUser = s.user
-		serverKey = ""
-		err := runServerAdd(nil, []string{name})
+		opts := &serverAddOptions{
+			host: s.host,
+			user: s.user,
+			key:  "",
+		}
+		err := runServerAdd(nil, []string{name}, opts)
 		if err != nil {
 			t.Fatalf("runServerAdd failed for %s: %v", name, err)
 		}
@@ -142,11 +152,13 @@ func TestServerListEmpty(t *testing.T) {
 func TestServerRemove(t *testing.T) {
 	setupTestEnv(t)
 
-	serverHost = "temp.example.com"
-	serverUser = "temp"
-	serverKey = ""
+	opts := &serverAddOptions{
+		host: "temp.example.com",
+		user: "temp",
+		key:  "",
+	}
 
-	err := runServerAdd(nil, []string{"temp-server"})
+	err := runServerAdd(nil, []string{"temp-server"}, opts)
 	if err != nil {
 		t.Fatalf("runServerAdd failed: %v", err)
 	}
