@@ -1,4 +1,4 @@
-package main
+package cmd
 
 import (
 	"context"
@@ -10,6 +10,8 @@ import (
 	"github.com/compose-spec/compose-go/v2/types"
 	"github.com/moby/moby/client"
 	"github.com/spf13/cobra"
+	"github.com/vrotherford/cicdez/internal/docker"
+	"github.com/vrotherford/cicdez/internal/vault"
 )
 
 type deployCommandOptions struct {
@@ -23,7 +25,7 @@ type deployCommandOptions struct {
 	pull         bool
 }
 
-func newDeployCommand() *cobra.Command {
+func NewDeployCommand() *cobra.Command {
 	opts := &deployCommandOptions{}
 	cmd := &cobra.Command{
 		Use:   "deploy [stack]",
@@ -36,7 +38,7 @@ func newDeployCommand() *cobra.Command {
 	}
 	cmd.Flags().StringArrayVarP(&opts.composeFiles, "file", "f", []string{"compose.yaml"}, "Compose file path(s)")
 	cmd.Flags().BoolVar(&opts.prune, "prune", false, "Prune services that are no longer referenced")
-	cmd.Flags().StringVar(&opts.resolveImage, "resolve-image", resolveImageAlways, "Query the registry to resolve image digest and supported platforms (\"always\", \"changed\", \"never\")")
+	cmd.Flags().StringVar(&opts.resolveImage, "resolve-image", docker.ResolveImageAlways, "Query the registry to resolve image digest and supported platforms (\"always\", \"changed\", \"never\")")
 	cmd.Flags().BoolVar(&opts.detach, "detach", false, "Exit immediately instead of waiting for services to converge")
 	cmd.Flags().BoolVarP(&opts.quiet, "quiet", "q", false, "Suppress progress output")
 	cmd.Flags().BoolVar(&opts.noBuild, "no-build", false, "Skip building images before deploy")
@@ -77,22 +79,22 @@ func runDeploy(ctx context.Context, opts deployOptions, files []string) error {
 		return fmt.Errorf("failed to get current directory: %w", err)
 	}
 
-	cfg, err := loadConfig(cwd)
+	cfg, err := vault.LoadConfig(cwd)
 	if err != nil {
 		return err
 	}
 
-	project, err := LoadCompose(ctx, os.Environ(), files...)
+	project, err := docker.LoadCompose(ctx, os.Environ(), files...)
 	if err != nil {
 		return err
 	}
 
-	cicdezSecrets, err := loadSecrets(cwd)
+	cicdezSecrets, err := vault.LoadSecrets(cwd)
 	if err != nil {
 		return fmt.Errorf("failed to load secrets: %w", err)
 	}
 
-	if err := processLocalConfigs(&project, cwd); err != nil {
+	if err := docker.ProcessLocalConfigs(&project, cwd); err != nil {
 		return fmt.Errorf("failed to process local_configs: %w", err)
 	}
 
@@ -101,39 +103,39 @@ func runDeploy(ctx context.Context, opts deployOptions, files []string) error {
 	}
 
 	// Build and push images if not skipped
-	if !opts.noBuild && hasBuildConfig(project) {
+	if !opts.noBuild && docker.HasBuildConfig(project) {
 		dockerClient, err := client.New(client.WithHostFromEnv())
 		if err != nil {
 			return fmt.Errorf("failed to create local docker client: %w", err)
 		}
 		defer dockerClient.Close()
 
-		buildOpts := BuildOptions{
-			cwd:        cwd,
-			registries: cfg.Registries,
-			noCache:    opts.noCache,
-			pull:       opts.pull,
-			push:       true,
+		buildOpts := docker.BuildOptions{
+			Cwd:        cwd,
+			Registries: cfg.Registries,
+			NoCache:    opts.noCache,
+			Pull:       opts.pull,
+			Push:       true,
 		}
 
-		if err := Build(ctx, dockerClient, project, buildOpts); err != nil {
+		if err := docker.Build(ctx, dockerClient, project, buildOpts); err != nil {
 			return fmt.Errorf("failed to build and push images: %w", err)
 		}
 	}
 
 	for _, server := range cfg.Servers {
-		dockerClient, err := NewDockerClientSSH(server.Host, server.User, []byte(server.Key))
+		dockerClient, err := docker.NewClientSSH(server.Host, server.User, []byte(server.Key))
 		if err != nil {
 			return err
 		}
 
-		err = Deploy(ctx, dockerClient, project, DeployOptions{
-			stack:        opts.stack,
-			prune:        opts.prune,
-			resolveImage: opts.resolveImage,
-			detach:       opts.detach,
-			quiet:        opts.quiet,
-			registries:   cfg.Registries,
+		err = docker.Deploy(ctx, dockerClient, project, docker.DeployOptions{
+			Stack:        opts.stack,
+			Prune:        opts.prune,
+			ResolveImage: opts.resolveImage,
+			Detach:       opts.detach,
+			Quiet:        opts.quiet,
+			Registries:   cfg.Registries,
 		})
 		if err != nil {
 			return err
@@ -143,23 +145,14 @@ func runDeploy(ctx context.Context, opts deployOptions, files []string) error {
 	return nil
 }
 
-func hasBuildConfig(project types.Project) bool {
-	for _, svc := range project.Services {
-		if svc.Build != nil {
-			return true
-		}
-	}
-	return false
-}
-
-func processSensitiveSecrets(project *types.Project, allSecrets Secrets) error {
+func processSensitiveSecrets(project *types.Project, allSecrets vault.Secrets) error {
 	if project.Secrets == nil {
 		project.Secrets = make(types.Secrets)
 	}
 
 	for svcName, svc := range project.Services {
 		for name, sensitive := range svc.Sensitive {
-			content, err := formatSecretsForSensitive(allSecrets, sensitive.Secrets, sensitive.Format)
+			content, err := vault.FormatSecretsForSensitive(allSecrets, sensitive.Secrets, sensitive.Format)
 			if err != nil {
 				return fmt.Errorf("failed to format sensitive secrets for service %s target %s: %w", svc.Name, sensitive.Target, err)
 			}

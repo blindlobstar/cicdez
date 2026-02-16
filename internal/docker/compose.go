@@ -1,4 +1,4 @@
-package main
+package docker
 
 import (
 	"context"
@@ -25,9 +25,9 @@ import (
 )
 
 const (
-	labelNamespace       = "com.docker.stack.namespace"
-	labelImage           = "com.docker.stack.image"
-	defaultNetworkDriver = "overlay"
+	LabelNamespace       = "com.docker.stack.namespace"
+	LabelImage           = "com.docker.stack.image"
+	DefaultNetworkDriver = "overlay"
 )
 
 func LoadCompose(ctx context.Context, env []string, paths ...string) (types.Project, error) {
@@ -49,12 +49,12 @@ func LoadCompose(ctx context.Context, env []string, paths ...string) (types.Proj
 	return *composeProject, nil
 }
 
-// scopeName adds the stack namespace prefix to a name
-func scopeName(stack, name string) string {
+// ScopeName adds the stack namespace prefix to a name
+func ScopeName(stack, name string) string {
 	return stack + "_" + name
 }
 
-func getServicesDeclaredNetworks(serviceConfigs types.Services) map[string]struct{} {
+func GetServicesDeclaredNetworks(serviceConfigs types.Services) map[string]struct{} {
 	serviceNetworks := map[string]struct{}{}
 	for _, serviceConfig := range serviceConfigs {
 		if len(serviceConfig.Networks) == 0 {
@@ -68,7 +68,7 @@ func getServicesDeclaredNetworks(serviceConfigs types.Services) map[string]struc
 	return serviceNetworks
 }
 
-func convertNetworks(stack string, networks types.Networks, serviceNetworks map[string]struct{}) (map[string]client.NetworkCreateOptions, []string) {
+func ConvertNetworks(stack string, networks types.Networks, serviceNetworks map[string]struct{}) (map[string]client.NetworkCreateOptions, []string) {
 	result := make(map[string]client.NetworkCreateOptions)
 	var externalNetworks []string
 
@@ -86,13 +86,13 @@ func convertNetworks(stack string, networks types.Networks, serviceNetworks map[
 			continue
 		}
 
-		netName := scopeName(stack, name)
+		netName := ScopeName(stack, name)
 		if net.Name != "" {
 			netName = net.Name
 		}
 
 		opts := client.NetworkCreateOptions{
-			Labels:     addStackLabel(stack, net.Labels),
+			Labels:     AddStackLabel(stack, net.Labels),
 			Driver:     net.Driver,
 			Options:    net.DriverOpts,
 			Attachable: net.Attachable,
@@ -105,7 +105,7 @@ func convertNetworks(stack string, networks types.Networks, serviceNetworks map[
 		}
 
 		if opts.Driver == "" {
-			opts.Driver = defaultNetworkDriver
+			opts.Driver = DefaultNetworkDriver
 		}
 
 		result[netName] = opts
@@ -114,7 +114,7 @@ func convertNetworks(stack string, networks types.Networks, serviceNetworks map[
 	return result, externalNetworks
 }
 
-func convertSecrets(stack string, secrets types.Secrets) ([]swarm.SecretSpec, error) {
+func ConvertSecrets(stack string, secrets types.Secrets) ([]swarm.SecretSpec, error) {
 	var result []swarm.SecretSpec
 
 	for name, secret := range secrets {
@@ -122,7 +122,7 @@ func convertSecrets(stack string, secrets types.Secrets) ([]swarm.SecretSpec, er
 			continue
 		}
 
-		secretName := scopeName(stack, name)
+		secretName := ScopeName(stack, name)
 		if secret.Name != "" {
 			secretName = secret.Name
 		}
@@ -141,7 +141,7 @@ func convertSecrets(stack string, secrets types.Secrets) ([]swarm.SecretSpec, er
 		spec := swarm.SecretSpec{
 			Annotations: swarm.Annotations{
 				Name:   secretName,
-				Labels: addStackLabel(stack, secret.Labels),
+				Labels: AddStackLabel(stack, secret.Labels),
 			},
 			Data: data,
 		}
@@ -151,7 +151,7 @@ func convertSecrets(stack string, secrets types.Secrets) ([]swarm.SecretSpec, er
 	return result, nil
 }
 
-func convertConfigs(stack string, configs types.Configs) ([]swarm.ConfigSpec, error) {
+func ConvertConfigs(stack string, configs types.Configs) ([]swarm.ConfigSpec, error) {
 	var result []swarm.ConfigSpec
 
 	for name, config := range configs {
@@ -159,7 +159,7 @@ func convertConfigs(stack string, configs types.Configs) ([]swarm.ConfigSpec, er
 			continue
 		}
 
-		configName := scopeName(stack, name)
+		configName := ScopeName(stack, name)
 		if config.Name != "" {
 			configName = config.Name
 		}
@@ -178,7 +178,7 @@ func convertConfigs(stack string, configs types.Configs) ([]swarm.ConfigSpec, er
 		spec := swarm.ConfigSpec{
 			Annotations: swarm.Annotations{
 				Name:   configName,
-				Labels: addStackLabel(stack, config.Labels),
+				Labels: AddStackLabel(stack, config.Labels),
 			},
 			Data: data,
 		}
@@ -188,7 +188,7 @@ func convertConfigs(stack string, configs types.Configs) ([]swarm.ConfigSpec, er
 	return result, nil
 }
 
-func convertServices(ctx context.Context, apiClient client.APIClient, stack string, project types.Project) (map[string]swarm.ServiceSpec, error) {
+func ConvertServices(ctx context.Context, apiClient client.APIClient, stack string, project types.Project) (map[string]swarm.ServiceSpec, error) {
 	result := make(map[string]swarm.ServiceSpec)
 
 	for _, svc := range project.Services {
@@ -207,8 +207,8 @@ func convertService(ctx context.Context, apiClient client.APIClient, stack strin
 	if svc.Deploy != nil {
 		deployLabels = svc.Deploy.Labels
 	}
-	serviceLabels := addStackLabel(stack, deployLabels)
-	serviceLabels[labelImage] = svc.Image
+	serviceLabels := AddStackLabel(stack, deployLabels)
+	serviceLabels[LabelImage] = svc.Image
 
 	healthcheck, err := convertHealthcheck(svc.HealthCheck)
 	if err != nil {
@@ -231,7 +231,7 @@ func convertService(ctx context.Context, apiClient client.APIClient, stack strin
 		Hosts:           convertExtraHosts(svc.ExtraHosts),
 		DNSConfig:       convertDNSConfig(svc.DNS, svc.DNSSearch),
 		Healthcheck:     healthcheck,
-		Labels:          addStackLabel(stack, svc.Labels),
+		Labels:          AddStackLabel(stack, svc.Labels),
 		Dir:             svc.WorkingDir,
 		User:            svc.User,
 		StopGracePeriod: stopGracePeriod,
@@ -276,14 +276,13 @@ func convertService(ctx context.Context, apiClient client.APIClient, stack strin
 			return swarm.ServiceSpec{}, fmt.Errorf("secret %s not found", secretRef.Source)
 		}
 
-		secretName := scopeName(stack, secretRef.Source)
+		secretName := ScopeName(stack, secretRef.Source)
 		if secret.Name != "" {
 			secretName = secret.Name
 		} else if secret.External {
 			secretName = secretRef.Source
 		}
 
-		// Look up secret ID from API
 		secretID, err := lookupSecretID(ctx, apiClient, secretName)
 		if err != nil {
 			return swarm.ServiceSpec{}, fmt.Errorf("secret %s: %w", secretName, err)
@@ -326,14 +325,13 @@ func convertService(ctx context.Context, apiClient client.APIClient, stack strin
 			return swarm.ServiceSpec{}, fmt.Errorf("config %s not found", configRef.Source)
 		}
 
-		configName := scopeName(stack, configRef.Source)
+		configName := ScopeName(stack, configRef.Source)
 		if config.Name != "" {
 			configName = config.Name
 		} else if config.External {
 			configName = configRef.Source
 		}
 
-		// Look up config ID from API
 		configID, err := lookupConfigID(ctx, apiClient, configName)
 		if err != nil {
 			return swarm.ServiceSpec{}, fmt.Errorf("config %s: %w", configName, err)
@@ -373,12 +371,12 @@ func convertService(ctx context.Context, apiClient client.APIClient, stack strin
 	var networkAttachments []swarm.NetworkAttachmentConfig
 	if len(svc.Networks) == 0 {
 		networkAttachments = append(networkAttachments, swarm.NetworkAttachmentConfig{
-			Target:  scopeName(stack, "default"),
+			Target:  ScopeName(stack, "default"),
 			Aliases: []string{svc.Name},
 		})
 	} else {
 		for netName, netConfig := range svc.Networks {
-			target := scopeName(stack, netName)
+			target := ScopeName(stack, netName)
 			if net, ok := networks[netName]; ok && net.Name != "" {
 				target = net.Name
 			}
@@ -407,7 +405,6 @@ func convertService(ctx context.Context, apiClient client.APIClient, stack strin
 		}
 	}
 
-	// Sort for idempotence
 	sort.Slice(networkAttachments, func(i, j int) bool {
 		return networkAttachments[i].Target < networkAttachments[j].Target
 	})
@@ -435,7 +432,7 @@ func convertService(ctx context.Context, apiClient client.APIClient, stack strin
 
 	spec := swarm.ServiceSpec{
 		Annotations: swarm.Annotations{
-			Name:   scopeName(stack, svc.Name),
+			Name:   ScopeName(stack, svc.Name),
 			Labels: serviceLabels,
 		},
 		TaskTemplate: swarm.TaskSpec{
@@ -687,7 +684,6 @@ func convertDeployMode(mode string, replicas *int) (swarm.ServiceMode, error) {
 
 func convertRestartPolicy(restart string, source *types.RestartPolicy) (*swarm.RestartPolicy, error) {
 	if source == nil {
-		// Fall back to parsing the restart field
 		if restart == "" || restart == "no" {
 			return nil, nil
 		}
@@ -830,14 +826,14 @@ func capabilitiesMap(caps []string) map[string]bool {
 	return normalized
 }
 
-func addStackLabel(stack string, labels types.Labels) map[string]string {
+func AddStackLabel(stack string, labels types.Labels) map[string]string {
 	result := make(map[string]string)
 	maps.Copy(result, labels)
-	result[labelNamespace] = stack
+	result[LabelNamespace] = stack
 	return result
 }
 
-func processLocalConfigs(project *types.Project, cwd string) error {
+func ProcessLocalConfigs(project *types.Project, cwd string) error {
 	if project.Configs == nil {
 		project.Configs = make(types.Configs)
 	}

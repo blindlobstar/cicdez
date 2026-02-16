@@ -1,15 +1,10 @@
-package main
+package cmd
 
 import (
-	"fmt"
-	"os"
-
 	"github.com/spf13/cobra"
 )
 
-const cicdezDir = ".cicdez"
-
-func newRootCommand() *cobra.Command {
+func NewRootCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "cicdez",
 		Short: "Easy deployment and continuous delivery tool using Docker Swarm, SOPS, and age encryption",
@@ -19,17 +14,10 @@ func newRootCommand() *cobra.Command {
 - Deploying to Docker Swarm with version control
 - Tracking configuration changes via git`,
 	}
-	cmd.AddCommand(newSecretCommand())
-	cmd.AddCommand(newServerCommand())
-	cmd.AddCommand(newRegistryCommand())
-	cmd.AddCommand(newBuildCommand())
-	cmd.AddCommand(newDeployCommand())
+	cmd.AddCommand(NewSecretCommand())
+	cmd.AddCommand(NewServerCommand())
+	cmd.AddCommand(NewRegistryCommand())
+	cmd.AddCommand(NewBuildCommand())
+	cmd.AddCommand(NewDeployCommand())
 	return cmd
-}
-
-func main() {
-	if err := newRootCommand().Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
 }

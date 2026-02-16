@@ -1,4 +1,4 @@
-package main
+package docker
 
 import (
 	"context"
@@ -15,7 +15,7 @@ func TestComposeParser(t *testing.T) {
 	}{
 		{
 			name:  "Single compose file with all extensions",
-			files: []string{"testdata/docker-compose.yml"},
+			files: []string{"../../testdata/docker-compose.yml"},
 			checkFunc: func(t *testing.T, project types.Project) {
 				if len(project.Services) != 2 {
 					t.Errorf("expected 2 services, got %d", len(project.Services))
@@ -136,7 +136,7 @@ func TestComposeParser(t *testing.T) {
 		},
 		{
 			name:  "Multiple compose files with override",
-			files: []string{"testdata/docker-compose.yml", "testdata/docker-compose.override.yml"},
+			files: []string{"../../testdata/docker-compose.yml", "../../testdata/docker-compose.override.yml"},
 			checkFunc: func(t *testing.T, project types.Project) {
 				webService, ok := project.Services["web"]
 				if !ok {
@@ -162,7 +162,7 @@ func TestComposeParser(t *testing.T) {
 			ctx := context.Background()
 			project, err := LoadCompose(ctx, []string{}, tt.files...)
 			if err != nil {
-				t.Fatalf("loadCompose failed: %v", err)
+				t.Fatalf("LoadCompose failed: %v", err)
 			}
 
 			tt.checkFunc(t, project)

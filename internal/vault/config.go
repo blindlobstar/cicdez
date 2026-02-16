@@ -1,4 +1,4 @@
-package main
+package vault
 
 import (
 	"fmt"
@@ -8,7 +8,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var configPath string = filepath.Join(cicdezDir, "config.age")
+const Dir = ".cicdez"
+
+var configPath = filepath.Join(Dir, "config.age")
 
 type Config struct {
 	Servers    map[string]Server              `yaml:"servers"`
@@ -21,13 +23,7 @@ type Server struct {
 	Key  string `yaml:"key"`
 }
 
-type Registry struct {
-	URL      string `yaml:"url"`
-	Username string `yaml:"username"`
-	Password string `yaml:"password"`
-}
-
-func loadConfig(path string) (Config, error) {
+func LoadConfig(path string) (Config, error) {
 	var config Config
 
 	data, err := DecryptFile(filepath.Join(path, configPath))
@@ -42,7 +38,7 @@ func loadConfig(path string) (Config, error) {
 	return config, nil
 }
 
-func saveConfig(path string, config Config) error {
+func SaveConfig(path string, config Config) error {
 	data, err := yaml.Marshal(config)
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)

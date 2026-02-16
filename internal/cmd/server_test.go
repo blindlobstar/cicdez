@@ -1,7 +1,9 @@
-package main
+package cmd
 
 import (
 	"testing"
+
+	"github.com/vrotherford/cicdez/internal/vault"
 )
 
 func TestServerAdd(t *testing.T) {
@@ -18,9 +20,9 @@ func TestServerAdd(t *testing.T) {
 		t.Fatalf("runServerAdd failed: %v", err)
 	}
 
-	config, err := loadConfig(".")
+	config, err := vault.LoadConfig(".")
 	if err != nil {
-		t.Fatalf("loadConfig failed: %v", err)
+		t.Fatalf("LoadConfig failed: %v", err)
 	}
 
 	server, exists := config.Servers["production"]
@@ -51,9 +53,9 @@ func TestServerAddWithKey(t *testing.T) {
 		t.Fatalf("runServerAdd failed: %v", err)
 	}
 
-	config, err := loadConfig(".")
+	config, err := vault.LoadConfig(".")
 	if err != nil {
-		t.Fatalf("loadConfig failed: %v", err)
+		t.Fatalf("LoadConfig failed: %v", err)
 	}
 
 	server, exists := config.Servers["staging"]
@@ -91,9 +93,9 @@ func TestServerAddUpdate(t *testing.T) {
 		t.Fatalf("runServerAdd (update) failed: %v", err)
 	}
 
-	config, err := loadConfig(".")
+	config, err := vault.LoadConfig(".")
 	if err != nil {
-		t.Fatalf("loadConfig failed: %v", err)
+		t.Fatalf("LoadConfig failed: %v", err)
 	}
 
 	server := config.Servers["myserver"]
@@ -168,9 +170,9 @@ func TestServerRemove(t *testing.T) {
 		t.Fatalf("runServerRemove failed: %v", err)
 	}
 
-	config, err := loadConfig(".")
+	config, err := vault.LoadConfig(".")
 	if err != nil {
-		t.Fatalf("loadConfig failed: %v", err)
+		t.Fatalf("LoadConfig failed: %v", err)
 	}
 
 	if _, exists := config.Servers["temp-server"]; exists {

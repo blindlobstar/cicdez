@@ -1,4 +1,4 @@
-package main
+package cmd
 
 import (
 	"fmt"
@@ -6,6 +6,8 @@ import (
 
 	"github.com/moby/moby/client"
 	"github.com/spf13/cobra"
+	"github.com/vrotherford/cicdez/internal/docker"
+	"github.com/vrotherford/cicdez/internal/vault"
 )
 
 type buildCommandOptions struct {
@@ -15,7 +17,7 @@ type buildCommandOptions struct {
 	push        bool
 }
 
-func newBuildCommand() *cobra.Command {
+func NewBuildCommand() *cobra.Command {
 	opts := &buildCommandOptions{}
 	cmd := &cobra.Command{
 		Use:   "build [services...]",
@@ -40,12 +42,12 @@ func runBuild(cmd *cobra.Command, args []string, cmdOpts *buildCommandOptions) e
 		return fmt.Errorf("failed to get current directory: %w", err)
 	}
 
-	project, err := LoadCompose(ctx, nil, cmdOpts.composeFile)
+	project, err := docker.LoadCompose(ctx, nil, cmdOpts.composeFile)
 	if err != nil {
 		return fmt.Errorf("failed to load compose file: %w", err)
 	}
 
-	config, err := loadConfig(cwd)
+	config, err := vault.LoadConfig(cwd)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
@@ -61,14 +63,14 @@ func runBuild(cmd *cobra.Command, args []string, cmdOpts *buildCommandOptions) e
 		servicesToBuild[arg] = true
 	}
 
-	opts := BuildOptions{
-		services:   servicesToBuild,
-		cwd:        cwd,
-		registries: config.Registries,
-		noCache:    cmdOpts.noCache,
-		pull:       cmdOpts.pull,
-		push:       cmdOpts.push,
+	opts := docker.BuildOptions{
+		Services:   servicesToBuild,
+		Cwd:        cwd,
+		Registries: config.Registries,
+		NoCache:    cmdOpts.noCache,
+		Pull:       cmdOpts.pull,
+		Push:       cmdOpts.push,
 	}
 
-	return Build(ctx, dockerClient, project, opts)
+	return docker.Build(ctx, dockerClient, project, opts)
 }

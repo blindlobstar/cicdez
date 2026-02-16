@@ -1,4 +1,4 @@
-package main
+package cmd
 
 import (
 	"fmt"
@@ -6,6 +6,7 @@ import (
 	"sort"
 
 	"github.com/spf13/cobra"
+	"github.com/vrotherford/cicdez/internal/vault"
 )
 
 type serverAddOptions struct {
@@ -14,7 +15,7 @@ type serverAddOptions struct {
 	key  string
 }
 
-func newServerCommand() *cobra.Command {
+func NewServerCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "server",
 		Short: "Manage deployment servers",
@@ -71,22 +72,22 @@ func runServerAdd(cmd *cobra.Command, args []string, opts *serverAddOptions) err
 		return fmt.Errorf("failed to get current directory: %w", err)
 	}
 
-	config, err := loadConfig(cwd)
+	config, err := vault.LoadConfig(cwd)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
 	if config.Servers == nil {
-		config.Servers = make(map[string]Server)
+		config.Servers = make(map[string]vault.Server)
 	}
 
-	config.Servers[name] = Server{
+	config.Servers[name] = vault.Server{
 		Host: opts.host,
 		User: opts.user,
 		Key:  opts.key,
 	}
 
-	if err := saveConfig(cwd, config); err != nil {
+	if err := vault.SaveConfig(cwd, config); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 
@@ -100,7 +101,7 @@ func runServerList(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get current directory: %w", err)
 	}
 
-	config, err := loadConfig(cwd)
+	config, err := vault.LoadConfig(cwd)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
@@ -110,7 +111,6 @@ func runServerList(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Sort server names for consistent output
 	names := make([]string, 0, len(config.Servers))
 	for name := range config.Servers {
 		names = append(names, name)
@@ -139,7 +139,7 @@ func runServerRemove(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get current directory: %w", err)
 	}
 
-	config, err := loadConfig(cwd)
+	config, err := vault.LoadConfig(cwd)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
@@ -150,7 +150,7 @@ func runServerRemove(cmd *cobra.Command, args []string) error {
 
 	delete(config.Servers, name)
 
-	if err := saveConfig(cwd, config); err != nil {
+	if err := vault.SaveConfig(cwd, config); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 

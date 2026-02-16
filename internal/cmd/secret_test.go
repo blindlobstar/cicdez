@@ -1,4 +1,4 @@
-package main
+package cmd
 
 import (
 	"os"
@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"filippo.io/age"
+	"github.com/vrotherford/cicdez/internal/vault"
 )
 
 func setupTestEnv(t *testing.T) string {
@@ -18,16 +19,16 @@ func setupTestEnv(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("failed to generate age key: %v", err)
 	}
-	identity = newIdentity
+	vault.SetIdentity(newIdentity)
 
 	if err := os.MkdirAll(filepath.Join(tmpDir, ".keys"), 0o700); err != nil {
 		t.Fatalf("failed to create key directory: %v", err)
 	}
 
-	if err := os.WriteFile(filepath.Join(tmpDir, ".keys", "age.key"), []byte(identity.String()+"\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(tmpDir, ".keys", "age.key"), []byte(newIdentity.String()+"\n"), 0o600); err != nil {
 		t.Fatalf("failed to write age key: %v", err)
 	}
-	os.Setenv(envAgeKeyPath, filepath.Join(tmpDir, ".keys", "age.key"))
+	os.Setenv("CICDEZ_AGE_KEY_PATH", filepath.Join(tmpDir, ".keys", "age.key"))
 
 	os.Stdout = os.NewFile(uintptr(syscall.Stdin), os.DevNull)
 	t.Cleanup(func() {
@@ -45,9 +46,9 @@ func TestSecretAdd(t *testing.T) {
 		t.Fatalf("runSecretAdd failed: %v", err)
 	}
 
-	secrets, err := loadSecrets(".")
+	secrets, err := vault.LoadSecrets(".")
 	if err != nil {
-		t.Fatalf("loadSecrets failed: %v", err)
+		t.Fatalf("LoadSecrets failed: %v", err)
 	}
 
 	if secrets.Values["DB_PASSWORD"] != "secret123" {
@@ -68,9 +69,9 @@ func TestSecretAddUpdate(t *testing.T) {
 		t.Fatalf("runSecretAdd (update) failed: %v", err)
 	}
 
-	secrets, err := loadSecrets(".")
+	secrets, err := vault.LoadSecrets(".")
 	if err != nil {
-		t.Fatalf("loadSecrets failed: %v", err)
+		t.Fatalf("LoadSecrets failed: %v", err)
 	}
 
 	if secrets.Values["API_KEY"] != "updated_value" {
@@ -122,9 +123,9 @@ func TestSecretRemove(t *testing.T) {
 		t.Fatalf("runSecretRemove failed: %v", err)
 	}
 
-	secrets, err := loadSecrets(".")
+	secrets, err := vault.LoadSecrets(".")
 	if err != nil {
-		t.Fatalf("loadSecrets failed: %v", err)
+		t.Fatalf("LoadSecrets failed: %v", err)
 	}
 
 	if _, exists := secrets.Values["TEMP_SECRET"]; exists {

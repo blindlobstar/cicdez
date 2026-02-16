@@ -1,4 +1,4 @@
-package main
+package vault
 
 import (
 	"bytes"
@@ -11,9 +11,14 @@ import (
 	"filippo.io/age"
 )
 
-const envAgeKeyPath = "CICDEZ_AGE_KEY_FILE"
+const EnvAgeKeyPath = "CICDEZ_AGE_KEY_FILE"
 
 var identity *age.X25519Identity
+
+// SetIdentity sets the age identity for testing purposes
+func SetIdentity(id *age.X25519Identity) {
+	identity = id
+}
 
 func EncryptFile(path string, data []byte) error {
 	if err := loadIdentity(); err != nil {
@@ -82,7 +87,7 @@ func loadIdentity() error {
 		return nil
 	}
 
-	kp, err := getKeyPath()
+	kp, err := GetKeyPath()
 	if err != nil {
 		return fmt.Errorf("failed to get key path: %w", err)
 	}
@@ -106,8 +111,8 @@ func loadIdentity() error {
 	return nil
 }
 
-func getKeyPath() (string, error) {
-	if envPath := os.Getenv(envAgeKeyPath); envPath != "" {
+func GetKeyPath() (string, error) {
+	if envPath := os.Getenv(EnvAgeKeyPath); envPath != "" {
 		return envPath, nil
 	}
 
