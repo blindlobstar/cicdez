@@ -1,4 +1,4 @@
-package main
+package cmd
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
 	"github.com/spf13/cobra"
+	"github.com/vrotherford/cicdez/internal/vault"
 )
 
 type RegistryClient interface {
@@ -27,11 +28,11 @@ type registryAddOptions struct {
 	clientFactory RegistryClientFactory
 }
 
-func newRegistryCommand() *cobra.Command {
-	return newRegistryCommandWithFactory(DefaultRegistryClientFactory)
+func NewRegistryCommand() *cobra.Command {
+	return NewRegistryCommandWithFactory(DefaultRegistryClientFactory)
 }
 
-func newRegistryCommandWithFactory(clientFactory RegistryClientFactory) *cobra.Command {
+func NewRegistryCommandWithFactory(clientFactory RegistryClientFactory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "registry",
 		Short: "Manage Docker registry credentials",
@@ -112,7 +113,7 @@ func runRegistryAdd(cmd *cobra.Command, args []string, opts *registryAddOptions)
 		authConfig.IdentityToken = resp.Auth.IdentityToken
 	}
 
-	config, err := loadConfig(cwd)
+	config, err := vault.LoadConfig(cwd)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
@@ -123,7 +124,7 @@ func runRegistryAdd(cmd *cobra.Command, args []string, opts *registryAddOptions)
 
 	config.Registries[server] = authConfig
 
-	if err := saveConfig(cwd, config); err != nil {
+	if err := vault.SaveConfig(cwd, config); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 
@@ -140,7 +141,7 @@ func runRegistryList(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get current directory: %w", err)
 	}
 
-	config, err := loadConfig(cwd)
+	config, err := vault.LoadConfig(cwd)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
@@ -158,10 +159,10 @@ func runRegistryList(cmd *cobra.Command, args []string) error {
 
 	fmt.Println("Registries:")
 	for _, name := range names {
-		registry := config.Registries[name]
+		reg := config.Registries[name]
 		fmt.Printf("  %s:\n", name)
-		fmt.Printf("    URL: %s\n", registry.ServerAddress)
-		fmt.Printf("    Username: %s\n", registry.Username)
+		fmt.Printf("    URL: %s\n", reg.ServerAddress)
+		fmt.Printf("    Username: %s\n", reg.Username)
 		fmt.Printf("    Password: <configured>\n")
 	}
 
@@ -176,7 +177,7 @@ func runRegistryRemove(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get current directory: %w", err)
 	}
 
-	config, err := loadConfig(cwd)
+	config, err := vault.LoadConfig(cwd)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
@@ -187,7 +188,7 @@ func runRegistryRemove(cmd *cobra.Command, args []string) error {
 
 	delete(config.Registries, server)
 
-	if err := saveConfig(cwd, config); err != nil {
+	if err := vault.SaveConfig(cwd, config); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 

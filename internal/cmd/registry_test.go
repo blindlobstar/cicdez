@@ -1,4 +1,4 @@
-package main
+package cmd
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
 	"github.com/spf13/cobra"
+	"github.com/vrotherford/cicdez/internal/vault"
 )
 
 type mockRegistryClient struct {
@@ -44,9 +45,9 @@ func TestRegistryAdd(t *testing.T) {
 		t.Fatalf("runRegistryAdd failed: %v", err)
 	}
 
-	config, err := loadConfig(".")
+	config, err := vault.LoadConfig(".")
 	if err != nil {
-		t.Fatalf("loadConfig failed: %v", err)
+		t.Fatalf("LoadConfig failed: %v", err)
 	}
 
 	reg, exists := config.Registries["registry.example.com"]
@@ -94,9 +95,9 @@ func TestRegistryAddWithIdentityToken(t *testing.T) {
 		t.Fatalf("runRegistryAdd failed: %v", err)
 	}
 
-	config, err := loadConfig(".")
+	config, err := vault.LoadConfig(".")
 	if err != nil {
-		t.Fatalf("loadConfig failed: %v", err)
+		t.Fatalf("LoadConfig failed: %v", err)
 	}
 
 	reg := config.Registries["gcr.io"]
@@ -134,9 +135,9 @@ func TestRegistryAddUpdate(t *testing.T) {
 		t.Fatalf("runRegistryAdd (update) failed: %v", err)
 	}
 
-	config, err := loadConfig(".")
+	config, err := vault.LoadConfig(".")
 	if err != nil {
-		t.Fatalf("loadConfig failed: %v", err)
+		t.Fatalf("LoadConfig failed: %v", err)
 	}
 
 	reg := config.Registries["myregistry.com"]
@@ -207,9 +208,9 @@ func TestRegistryRemove(t *testing.T) {
 		t.Fatalf("runRegistryRemove failed: %v", err)
 	}
 
-	config, err := loadConfig(".")
+	config, err := vault.LoadConfig(".")
 	if err != nil {
-		t.Fatalf("loadConfig failed: %v", err)
+		t.Fatalf("LoadConfig failed: %v", err)
 	}
 
 	if _, exists := config.Registries["temp-registry.com"]; exists {

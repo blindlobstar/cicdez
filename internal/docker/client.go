@@ -1,4 +1,4 @@
-package main
+package docker
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-func NewDockerClientSSH(host, user string, privateKey []byte) (client.APIClient, error) {
+func NewClientSSH(host, user string, privateKey []byte) (client.APIClient, error) {
 	signer, err := ssh.ParsePrivateKey(privateKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse private key: %w", err)

@@ -1,4 +1,4 @@
-package main
+package docker
 
 import (
 	"context"
@@ -20,18 +20,18 @@ import (
 )
 
 const (
-	resolveImageAlways  = "always"
-	resolveImageChanged = "changed"
-	resolveImageNever   = "never"
+	ResolveImageAlways  = "always"
+	ResolveImageChanged = "changed"
+	ResolveImageNever   = "never"
 )
 
 type DeployOptions struct {
-	stack        string
-	prune        bool
-	resolveImage string
-	detach       bool
-	quiet        bool
-	registries   map[string]registry.AuthConfig
+	Stack        string
+	Prune        bool
+	ResolveImage string
+	Detach       bool
+	Quiet        bool
+	Registries   map[string]registry.AuthConfig
 }
 
 func Deploy(ctx context.Context, dockerClient client.APIClient, project types.Project, opts DeployOptions) error {
@@ -39,26 +39,26 @@ func Deploy(ctx context.Context, dockerClient client.APIClient, project types.Pr
 		return err
 	}
 
-	if opts.prune {
+	if opts.Prune {
 		services := map[string]struct{}{}
 		for _, svc := range project.Services {
 			services[svc.Name] = struct{}{}
 		}
-		if err := pruneServices(ctx, dockerClient, opts.stack, services); err != nil {
+		if err := pruneServices(ctx, dockerClient, opts.Stack, services); err != nil {
 			return err
 		}
 	}
 
-	serviceNetworks := getServicesDeclaredNetworks(project.Services)
-	networks, externalNetworks := convertNetworks(opts.stack, project.Networks, serviceNetworks)
+	serviceNetworks := GetServicesDeclaredNetworks(project.Services)
+	networks, externalNetworks := ConvertNetworks(opts.Stack, project.Networks, serviceNetworks)
 	if err := validateExternalNetworks(ctx, dockerClient, externalNetworks); err != nil {
 		return err
 	}
-	if err := createNetworks(ctx, dockerClient, opts.stack, networks); err != nil {
+	if err := createNetworks(ctx, dockerClient, opts.Stack, networks); err != nil {
 		return err
 	}
 
-	secrets, err := convertSecrets(opts.stack, project.Secrets)
+	secrets, err := ConvertSecrets(opts.Stack, project.Secrets)
 	if err != nil {
 		return err
 	}
@@ -66,7 +66,7 @@ func Deploy(ctx context.Context, dockerClient client.APIClient, project types.Pr
 		return err
 	}
 
-	configs, err := convertConfigs(opts.stack, project.Configs)
+	configs, err := ConvertConfigs(opts.Stack, project.Configs)
 	if err != nil {
 		return err
 	}
@@ -74,21 +74,21 @@ func Deploy(ctx context.Context, dockerClient client.APIClient, project types.Pr
 		return err
 	}
 
-	services, err := convertServices(ctx, dockerClient, opts.stack, project)
+	services, err := ConvertServices(ctx, dockerClient, opts.Stack, project)
 	if err != nil {
 		return err
 	}
 
-	serviceIDs, err := deployServices(ctx, dockerClient, services, opts.stack, opts.resolveImage, opts.registries, opts.quiet)
+	serviceIDs, err := deployServices(ctx, dockerClient, services, opts.Stack, opts.ResolveImage, opts.Registries, opts.Quiet)
 	if err != nil {
 		return err
 	}
 
-	if opts.detach {
+	if opts.Detach {
 		return nil
 	}
 
-	return waitOnServices(ctx, dockerClient, serviceIDs, opts.quiet)
+	return waitOnServices(ctx, dockerClient, serviceIDs, opts.Quiet)
 }
 
 func checkDaemonIsSwarmManager(ctx context.Context, dockerClient client.APIClient) error {
@@ -103,7 +103,7 @@ func checkDaemonIsSwarmManager(ctx context.Context, dockerClient client.APIClien
 }
 
 func getStackFilter(stack string) client.Filters {
-	return make(client.Filters).Add("label", labelNamespace+"="+stack)
+	return make(client.Filters).Add("label", LabelNamespace+"="+stack)
 }
 
 func pruneServices(ctx context.Context, dockerClient client.APIClient, stack string, services map[string]struct{}) error {
@@ -158,7 +158,7 @@ func createNetworks(ctx context.Context, apiClient client.APIClient, stack strin
 		}
 
 		if createOpts.Driver == "" {
-			createOpts.Driver = defaultNetworkDriver
+			createOpts.Driver = DefaultNetworkDriver
 		}
 
 		if _, err := apiClient.NetworkCreate(ctx, name, createOpts); err != nil {
@@ -234,7 +234,7 @@ func deployServices(ctx context.Context, apiClient client.APIClient, services ma
 	var serviceIDs []string
 
 	for internalName, serviceSpec := range services {
-		name := scopeName(stack, internalName)
+		name := ScopeName(stack, internalName)
 		image := serviceSpec.TaskTemplate.ContainerSpec.Image
 
 		encodedAuth := getEncodedAuth(image, registries)
@@ -246,16 +246,16 @@ func deployServices(ctx context.Context, apiClient client.APIClient, services ma
 			}
 
 			switch resolveImage {
-			case resolveImageAlways:
+			case ResolveImageAlways:
 				updateOpts.QueryRegistry = true
-			case resolveImageChanged:
-				if image != svc.Spec.Labels[labelImage] {
+			case ResolveImageChanged:
+				if image != svc.Spec.Labels[LabelImage] {
 					updateOpts.QueryRegistry = true
 				} else {
 					serviceSpec.TaskTemplate.ContainerSpec.Image = svc.Spec.TaskTemplate.ContainerSpec.Image
 				}
 			default:
-				if image == svc.Spec.Labels[labelImage] {
+				if image == svc.Spec.Labels[LabelImage] {
 					serviceSpec.TaskTemplate.ContainerSpec.Image = svc.Spec.TaskTemplate.ContainerSpec.Image
 				}
 			}
@@ -278,7 +278,7 @@ func deployServices(ctx context.Context, apiClient client.APIClient, services ma
 				fmt.Fprintf(os.Stdout, "Creating service %s\n", name)
 			}
 
-			queryRegistry := resolveImage == resolveImageAlways || resolveImage == resolveImageChanged
+			queryRegistry := resolveImage == ResolveImageAlways || resolveImage == ResolveImageChanged
 
 			response, err := apiClient.ServiceCreate(ctx, client.ServiceCreateOptions{
 				Spec:                serviceSpec,
@@ -354,4 +354,13 @@ func waitOnServices(ctx context.Context, dockerClient client.APIClient, serviceI
 	}
 
 	return nil
+}
+
+func HasBuildConfig(project types.Project) bool {
+	for _, svc := range project.Services {
+		if svc.Build != nil {
+			return true
+		}
+	}
+	return false
 }

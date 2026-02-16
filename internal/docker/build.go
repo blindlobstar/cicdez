@@ -1,4 +1,4 @@
-package main
+package docker
 
 import (
 	"context"
@@ -18,17 +18,17 @@ import (
 )
 
 type BuildOptions struct {
-	services   map[string]bool
-	cwd        string
-	registries map[string]registry.AuthConfig
-	noCache    bool
-	pull       bool
-	push       bool
+	Services   map[string]bool
+	Cwd        string
+	Registries map[string]registry.AuthConfig
+	NoCache    bool
+	Pull       bool
+	Push       bool
 }
 
 func Build(ctx context.Context, dockerClient client.APIClient, project types.Project, opt BuildOptions) error {
 	for _, svc := range project.Services {
-		if len(opt.services) > 0 && !opt.services[svc.Name] {
+		if len(opt.Services) > 0 && !opt.Services[svc.Name] {
 			continue
 		}
 
@@ -47,9 +47,9 @@ func Build(ctx context.Context, dockerClient client.APIClient, project types.Pro
 			return fmt.Errorf("failed to build %s: %w", svc.Name, err)
 		}
 
-		if opt.push {
+		if opt.Push {
 			fmt.Printf("Pushing %s...\n", imageName)
-			if err := pushImage(ctx, dockerClient, imageName, opt.registries); err != nil {
+			if err := PushImage(ctx, dockerClient, imageName, opt.Registries); err != nil {
 				return fmt.Errorf("failed to push %s: %w", svc.Name, err)
 			}
 		}
@@ -76,7 +76,7 @@ func buildImage(ctx context.Context, dockerClient client.APIClient, imageName st
 	}
 
 	if !filepath.IsAbs(buildContext) {
-		buildContext = filepath.Join(opt.cwd, buildContext)
+		buildContext = filepath.Join(opt.Cwd, buildContext)
 	}
 
 	dockerfile := build.Dockerfile
@@ -98,8 +98,8 @@ func buildImage(ctx context.Context, dockerClient client.APIClient, imageName st
 		Tags:       []string{imageName},
 		Dockerfile: dockerfile,
 		BuildArgs:  build.Args,
-		NoCache:    opt.noCache || build.NoCache,
-		PullParent: opt.pull || build.Pull,
+		NoCache:    opt.NoCache || build.NoCache,
+		PullParent: opt.Pull || build.Pull,
 		Remove:     true,
 		Target:     build.Target,
 	}
@@ -113,7 +113,7 @@ func buildImage(ctx context.Context, dockerClient client.APIClient, imageName st
 	return jsonmessage.DisplayJSONMessagesStream(resp.Body, os.Stdout, os.Stdout.Fd(), true, nil)
 }
 
-func pushImage(ctx context.Context, dockerClient client.APIClient, imageName string, registries map[string]registry.AuthConfig) error {
+func PushImage(ctx context.Context, dockerClient client.APIClient, imageName string, registries map[string]registry.AuthConfig) error {
 	ref, err := reference.ParseNormalizedNamed(imageName)
 	if err != nil {
 		return err

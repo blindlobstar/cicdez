@@ -1,4 +1,4 @@
-package main
+package vault
 
 import (
 	"encoding/json"
@@ -10,13 +10,13 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var secretsPath string = filepath.Join(cicdezDir, "secrets.age")
+var secretsPath = filepath.Join(Dir, "secrets.age")
 
 type Secrets struct {
 	Values map[string]string `yaml:"values"`
 }
 
-func loadSecrets(path string) (Secrets, error) {
+func LoadSecrets(path string) (Secrets, error) {
 	var secrets Secrets
 
 	data, err := DecryptFile(filepath.Join(path, secretsPath))
@@ -31,7 +31,7 @@ func loadSecrets(path string) (Secrets, error) {
 	return secrets, nil
 }
 
-func saveSecrets(path string, secrets Secrets) error {
+func SaveSecrets(path string, secrets Secrets) error {
 	data, err := yaml.Marshal(secrets)
 	if err != nil {
 		return fmt.Errorf("failed to marshal secrets: %w", err)
@@ -45,12 +45,12 @@ func saveSecrets(path string, secrets Secrets) error {
 }
 
 const (
-	secretOutputEnv  = "env"
-	secretOutputJSON = "json"
-	secretOutputRaw  = "raw"
+	SecretOutputEnv  = "env"
+	SecretOutputJSON = "json"
+	SecretOutputRaw  = "raw"
 )
 
-func formatEnv(secrets map[string]string) []byte {
+func FormatEnv(secrets map[string]string) []byte {
 	keys := make([]string, 0, len(secrets))
 	for k := range secrets {
 		keys = append(keys, k)
@@ -64,15 +64,15 @@ func formatEnv(secrets map[string]string) []byte {
 	return result
 }
 
-func formatJSON(secrets map[string]string) ([]byte, error) {
+func FormatJSON(secrets map[string]string) ([]byte, error) {
 	return json.Marshal(secrets)
 }
 
-func formatRaw(value string) []byte {
+func FormatRaw(value string) []byte {
 	return []byte(value)
 }
 
-func formatSecretsForSensitive(allSecrets Secrets, needed []types.SensitiveSecret, format string) ([]byte, error) {
+func FormatSecretsForSensitive(allSecrets Secrets, needed []types.SensitiveSecret, format string) ([]byte, error) {
 	if len(needed) == 0 {
 		return nil, fmt.Errorf("no secrets specified for sensitive config")
 	}
@@ -91,16 +91,16 @@ func formatSecretsForSensitive(allSecrets Secrets, needed []types.SensitiveSecre
 	}
 
 	switch format {
-	case secretOutputEnv, "":
-		return formatEnv(picked), nil
-	case secretOutputJSON:
-		return formatJSON(picked)
-	case secretOutputRaw:
+	case SecretOutputEnv, "":
+		return FormatEnv(picked), nil
+	case SecretOutputJSON:
+		return FormatJSON(picked)
+	case SecretOutputRaw:
 		if len(picked) != 1 {
 			return nil, fmt.Errorf("raw format requires exactly one secret, got %d", len(picked))
 		}
 		for _, v := range picked {
-			return formatRaw(v), nil
+			return FormatRaw(v), nil
 		}
 	}
 

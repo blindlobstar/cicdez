@@ -1,4 +1,4 @@
-package main
+package cmd
 
 import (
 	"fmt"
@@ -7,10 +7,11 @@ import (
 	"sort"
 
 	"github.com/spf13/cobra"
+	"github.com/vrotherford/cicdez/internal/vault"
 	"gopkg.in/yaml.v3"
 )
 
-func newSecretCommand() *cobra.Command {
+func NewSecretCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "secret",
 		Short: "Manage encrypted secrets",
@@ -68,7 +69,7 @@ func runSecretAdd(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get current directory: %w", err)
 	}
 
-	secrets, err := loadSecrets(cwd)
+	secrets, err := vault.LoadSecrets(cwd)
 	if err != nil {
 		return fmt.Errorf("failed to load secrets: %w", err)
 	}
@@ -79,7 +80,7 @@ func runSecretAdd(cmd *cobra.Command, args []string) error {
 
 	secrets.Values[name] = value
 
-	if err := saveSecrets(cwd, secrets); err != nil {
+	if err := vault.SaveSecrets(cwd, secrets); err != nil {
 		return fmt.Errorf("failed to save secrets: %w", err)
 	}
 
@@ -93,7 +94,7 @@ func runSecretList(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get current directory: %w", err)
 	}
 
-	secrets, err := loadSecrets(cwd)
+	secrets, err := vault.LoadSecrets(cwd)
 	if err != nil {
 		return fmt.Errorf("failed to load secrets: %w", err)
 	}
@@ -123,7 +124,7 @@ func runSecretEdit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get current directory: %w", err)
 	}
 
-	secrets, err := loadSecrets(cwd)
+	secrets, err := vault.LoadSecrets(cwd)
 	if err != nil {
 		return fmt.Errorf("failed to load secrets: %w", err)
 	}
@@ -165,12 +166,12 @@ func runSecretEdit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to read edited file: %w", err)
 	}
 
-	var editedSecrets Secrets
+	var editedSecrets vault.Secrets
 	if err := yaml.Unmarshal(editedData, &editedSecrets); err != nil {
 		return fmt.Errorf("failed to parse edited secrets: %w", err)
 	}
 
-	if err := saveSecrets(cwd, editedSecrets); err != nil {
+	if err := vault.SaveSecrets(cwd, editedSecrets); err != nil {
 		return fmt.Errorf("failed to save secrets: %w", err)
 	}
 
@@ -186,7 +187,7 @@ func runSecretRemove(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get current directory: %w", err)
 	}
 
-	secrets, err := loadSecrets(cwd)
+	secrets, err := vault.LoadSecrets(cwd)
 	if err != nil {
 		return fmt.Errorf("failed to load secrets: %w", err)
 	}
@@ -197,7 +198,7 @@ func runSecretRemove(cmd *cobra.Command, args []string) error {
 
 	delete(secrets.Values, name)
 
-	if err := saveSecrets(cwd, secrets); err != nil {
+	if err := vault.SaveSecrets(cwd, secrets); err != nil {
 		return fmt.Errorf("failed to save secrets: %w", err)
 	}
 
