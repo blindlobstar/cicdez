@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/vrotherford/cicdez/internal/vault"
@@ -12,7 +14,6 @@ func TestServerAdd(t *testing.T) {
 	opts := &serverAddOptions{
 		host: "192.168.1.100",
 		user: "deploy",
-		key:  "",
 	}
 
 	err := runServerAdd(nil, []string{"production"}, opts)
@@ -39,13 +40,20 @@ func TestServerAdd(t *testing.T) {
 	}
 }
 
-func TestServerAddWithKey(t *testing.T) {
+func TestServerAddWithKeyFile(t *testing.T) {
 	setupTestEnv(t)
 
+	// Create temp key file
+	keyContent := "-----BEGIN PRIVATE KEY-----\ntest_key\n-----END PRIVATE KEY-----"
+	keyFile := filepath.Join(t.TempDir(), "test_key")
+	if err := os.WriteFile(keyFile, []byte(keyContent), 0600); err != nil {
+		t.Fatalf("failed to write key file: %v", err)
+	}
+
 	opts := &serverAddOptions{
-		host: "10.0.0.5",
-		user: "ubuntu",
-		key:  "-----BEGIN PRIVATE KEY-----\ntest_key\n-----END PRIVATE KEY-----",
+		host:    "10.0.0.5",
+		user:    "ubuntu",
+		keyFile: keyFile,
 	}
 
 	err := runServerAdd(nil, []string{"staging"}, opts)
@@ -63,8 +71,8 @@ func TestServerAddWithKey(t *testing.T) {
 		t.Error("expected staging server to exist")
 	}
 
-	if server.Key == "" {
-		t.Error("expected server to have SSH key configured")
+	if server.Key != keyContent {
+		t.Errorf("expected server key to match file content, got '%s'", server.Key)
 	}
 }
 
@@ -74,7 +82,6 @@ func TestServerAddUpdate(t *testing.T) {
 	opts := &serverAddOptions{
 		host: "old-host.example.com",
 		user: "olduser",
-		key:  "",
 	}
 
 	err := runServerAdd(nil, []string{"myserver"}, opts)
@@ -82,10 +89,17 @@ func TestServerAddUpdate(t *testing.T) {
 		t.Fatalf("runServerAdd failed: %v", err)
 	}
 
+	// Create temp key file for update
+	keyContent := "new_key"
+	keyFile := filepath.Join(t.TempDir(), "new_key")
+	if err := os.WriteFile(keyFile, []byte(keyContent), 0600); err != nil {
+		t.Fatalf("failed to write key file: %v", err)
+	}
+
 	opts = &serverAddOptions{
-		host: "new-host.example.com",
-		user: "newuser",
-		key:  "new_key",
+		host:    "new-host.example.com",
+		user:    "newuser",
+		keyFile: keyFile,
 	}
 
 	err = runServerAdd(nil, []string{"myserver"}, opts)
@@ -107,8 +121,8 @@ func TestServerAddUpdate(t *testing.T) {
 		t.Errorf("expected user 'newuser', got '%s'", server.User)
 	}
 
-	if server.Key != "new_key" {
-		t.Errorf("expected key 'new_key', got '%s'", server.Key)
+	if server.Key != keyContent {
+		t.Errorf("expected key '%s', got '%s'", keyContent, server.Key)
 	}
 }
 
@@ -128,7 +142,6 @@ func TestServerList(t *testing.T) {
 		opts := &serverAddOptions{
 			host: s.host,
 			user: s.user,
-			key:  "",
 		}
 		err := runServerAdd(nil, []string{name}, opts)
 		if err != nil {
@@ -157,7 +170,6 @@ func TestServerRemove(t *testing.T) {
 	opts := &serverAddOptions{
 		host: "temp.example.com",
 		user: "temp",
-		key:  "",
 	}
 
 	err := runServerAdd(nil, []string{"temp-server"}, opts)

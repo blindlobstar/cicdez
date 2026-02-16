@@ -10,9 +10,9 @@ import (
 )
 
 type serverAddOptions struct {
-	host string
-	user string
-	key  string
+	host    string
+	user    string
+	keyFile string
 }
 
 func NewServerCommand() *cobra.Command {
@@ -39,7 +39,7 @@ func newServerAddCommand() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&opts.host, "host", "", "Server hostname or IP address (required)")
 	cmd.Flags().StringVar(&opts.user, "user", "", "SSH user (required)")
-	cmd.Flags().StringVar(&opts.key, "key", "", "SSH private key (optional)")
+	cmd.Flags().StringVarP(&opts.keyFile, "key-file", "i", "", "Path to SSH private key file")
 	cmd.MarkFlagRequired("host")
 	cmd.MarkFlagRequired("user")
 	return cmd
@@ -67,6 +67,15 @@ func newServerRemoveCommand() *cobra.Command {
 func runServerAdd(cmd *cobra.Command, args []string, opts *serverAddOptions) error {
 	name := args[0]
 
+	var keyContent string
+	if opts.keyFile != "" {
+		data, err := os.ReadFile(opts.keyFile)
+		if err != nil {
+			return fmt.Errorf("failed to read key file: %w", err)
+		}
+		keyContent = string(data)
+	}
+
 	cwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get current directory: %w", err)
@@ -84,7 +93,7 @@ func runServerAdd(cmd *cobra.Command, args []string, opts *serverAddOptions) err
 	config.Servers[name] = vault.Server{
 		Host: opts.host,
 		User: opts.user,
-		Key:  opts.key,
+		Key:  keyContent,
 	}
 
 	if err := vault.SaveConfig(cwd, config); err != nil {
