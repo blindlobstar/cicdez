@@ -9,12 +9,14 @@ import (
 	"path/filepath"
 
 	"github.com/compose-spec/compose-go/v2/types"
+	"github.com/containerd/platforms"
 	"github.com/distribution/reference"
 	"github.com/moby/go-archive"
 	"github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
 	"github.com/moby/moby/client/pkg/jsonmessage"
 	"github.com/moby/patternmatcher/ignorefile"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 type BuildOptions struct {
@@ -43,7 +45,7 @@ func Build(ctx context.Context, dockerClient client.APIClient, project types.Pro
 
 		fmt.Printf("Building %s...\n", imageName)
 
-		if err := buildImage(ctx, dockerClient, imageName, svc.Build, opt); err != nil {
+		if err := buildImage(ctx, dockerClient, imageName, svc.Build, svc.Platform, opt); err != nil {
 			return fmt.Errorf("failed to build %s: %w", svc.Name, err)
 		}
 
@@ -69,7 +71,7 @@ func readIgnorePatterns(buildContext string) []string {
 	return patterns
 }
 
-func buildImage(ctx context.Context, dockerClient client.APIClient, imageName string, build *types.BuildConfig, opt BuildOptions) error {
+func buildImage(ctx context.Context, dockerClient client.APIClient, imageName string, build *types.BuildConfig, platform string, opt BuildOptions) error {
 	buildContext := build.Context
 	if buildContext == "" {
 		buildContext = "."
@@ -102,6 +104,14 @@ func buildImage(ctx context.Context, dockerClient client.APIClient, imageName st
 		PullParent: opt.Pull || build.Pull,
 		Remove:     true,
 		Target:     build.Target,
+	}
+
+	if platform != "" {
+		p, err := platforms.Parse(platform)
+		if err != nil {
+			return fmt.Errorf("invalid platform %q: %w", platform, err)
+		}
+		opts.Platforms = []ocispec.Platform{p}
 	}
 
 	resp, err := dockerClient.ImageBuild(ctx, buildContextReader, opts)
