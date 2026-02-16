@@ -24,7 +24,12 @@ func NewClientSSH(host, user string, privateKey []byte) (client.APIClient, error
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 	}
 
-	sshClient, err := ssh.Dial("tcp", host+":22", sshConfig)
+	addr := host
+	if _, _, err := net.SplitHostPort(host); err != nil {
+		addr = host + ":22"
+	}
+
+	sshClient, err := ssh.Dial("tcp", addr, sshConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to dial ssh: %w", err)
 	}
@@ -39,6 +44,5 @@ func NewClientSSH(host, user string, privateKey []byte) (client.APIClient, error
 
 	return client.New(
 		client.WithHTTPClient(httpClient),
-		client.WithHost("http://docker"),
 	)
 }
