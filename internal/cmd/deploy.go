@@ -30,8 +30,8 @@ func NewDeployCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "deploy [stack]",
 		Short: "Deploy a stack to Docker Swarm",
-		Long:  "Deploy services defined in compose file to Docker Swarm cluster",
-		Args:  cobra.ExactArgs(1),
+		Long:  "Deploy services defined in compose file to Docker Swarm cluster. If stack name is not provided, uses the project name from compose file.",
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runDeployCommand(cmd, args, opts)
 		},
@@ -59,8 +59,13 @@ type deployOptions struct {
 }
 
 func runDeployCommand(cmd *cobra.Command, args []string, cmdOpts *deployCommandOptions) error {
+	var stack string
+	if len(args) > 0 {
+		stack = args[0]
+	}
+
 	opts := deployOptions{
-		stack:        args[0],
+		stack:        stack,
 		prune:        cmdOpts.prune,
 		resolveImage: cmdOpts.resolveImage,
 		detach:       cmdOpts.detach,
@@ -87,6 +92,10 @@ func runDeploy(ctx context.Context, opts deployOptions, files []string) error {
 	project, err := docker.LoadCompose(ctx, os.Environ(), files...)
 	if err != nil {
 		return err
+	}
+
+	if opts.stack == "" {
+		opts.stack = project.Name
 	}
 
 	cicdezSecrets, err := vault.LoadSecrets(cwd)
