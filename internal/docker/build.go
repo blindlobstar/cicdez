@@ -12,6 +12,7 @@ import (
 	"github.com/containerd/platforms"
 	"github.com/distribution/reference"
 	"github.com/moby/go-archive"
+	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
 	"github.com/moby/moby/client/pkg/jsonmessage"
@@ -96,17 +97,52 @@ func buildImage(ctx context.Context, dockerClient client.APIClient, imageName st
 	}
 	defer buildContextReader.Close()
 
+	tags := []string{imageName}
+	tags = append(tags, build.Tags...)
+
 	opts := client.ImageBuildOptions{
-		Tags:       []string{imageName},
-		Dockerfile: dockerfile,
-		BuildArgs:  build.Args,
-		NoCache:    opt.NoCache || build.NoCache,
-		PullParent: opt.Pull || build.Pull,
-		Remove:     true,
-		Target:     build.Target,
+		Tags:        tags,
+		Dockerfile:  dockerfile,
+		BuildArgs:   build.Args,
+		NoCache:     opt.NoCache || build.NoCache,
+		PullParent:  opt.Pull || build.Pull,
+		Remove:      true,
+		Target:      build.Target,
+		Labels:      build.Labels,
+		CacheFrom:   build.CacheFrom,
+		NetworkMode: build.Network,
+		ShmSize:     int64(build.ShmSize),
 	}
 
-	if platform != "" {
+	if len(build.ExtraHosts) > 0 {
+		opts.ExtraHosts = build.ExtraHosts.AsList(":")
+	}
+
+	if build.Isolation != "" {
+		opts.Isolation = container.Isolation(build.Isolation)
+	}
+
+	if len(build.Ulimits) > 0 {
+		opts.Ulimits = make([]*container.Ulimit, 0, len(build.Ulimits))
+		for name, u := range build.Ulimits {
+			opts.Ulimits = append(opts.Ulimits, &container.Ulimit{
+				Name: name,
+				Soft: int64(u.Soft),
+				Hard: int64(u.Hard),
+			})
+		}
+	}
+
+	if len(build.Platforms) > 0 {
+		opts.Platforms = make([]ocispec.Platform, 0, len(build.Platforms))
+		for _, ps := range build.Platforms {
+			p, err := platforms.Parse(ps)
+			if err != nil {
+				return fmt.Errorf("invalid platform %q: %w", ps, err)
+			}
+			opts.Platforms = append(opts.Platforms, p)
+		}
+	} else if platform != "" {
 		p, err := platforms.Parse(platform)
 		if err != nil {
 			return fmt.Errorf("invalid platform %q: %w", platform, err)
