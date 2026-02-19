@@ -23,6 +23,7 @@ type deployCommandOptions struct {
 	noBuild      bool
 	noCache      bool
 	pull         bool
+	server       string
 }
 
 func NewDeployCommand() *cobra.Command {
@@ -44,6 +45,7 @@ func NewDeployCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&opts.noBuild, "no-build", false, "Skip building images before deploy")
 	cmd.Flags().BoolVar(&opts.noCache, "no-cache", false, "Do not use cache when building")
 	cmd.Flags().BoolVar(&opts.pull, "pull", false, "Always pull newer versions of base images")
+	cmd.Flags().StringVar(&opts.server, "server", "", "Server to deploy to (uses default if not specified)")
 	return cmd
 }
 
@@ -56,6 +58,7 @@ type deployOptions struct {
 	noBuild      bool
 	noCache      bool
 	pull         bool
+	server       string
 }
 
 func runDeployCommand(cmd *cobra.Command, args []string, cmdOpts *deployCommandOptions) error {
@@ -73,6 +76,7 @@ func runDeployCommand(cmd *cobra.Command, args []string, cmdOpts *deployCommandO
 		noBuild:      cmdOpts.noBuild,
 		noCache:      cmdOpts.noCache,
 		pull:         cmdOpts.pull,
+		server:       cmdOpts.server,
 	}
 
 	return runDeploy(cmd.Context(), opts, cmdOpts.composeFiles)
@@ -132,23 +136,26 @@ func runDeploy(ctx context.Context, opts deployOptions, files []string) error {
 		}
 	}
 
-	for _, server := range cfg.Servers {
-		dockerClient, err := docker.NewClientSSH(server.Host, server.User, []byte(server.Key))
-		if err != nil {
-			return err
-		}
+	server, err := cfg.GetServer(opts.server)
+	if err != nil {
+		return err
+	}
 
-		err = docker.Deploy(ctx, dockerClient, project, docker.DeployOptions{
-			Stack:        opts.stack,
-			Prune:        opts.prune,
-			ResolveImage: opts.resolveImage,
-			Detach:       opts.detach,
-			Quiet:        opts.quiet,
-			Registries:   cfg.Registries,
-		})
-		if err != nil {
-			return err
-		}
+	dockerClient, err := docker.NewClientSSH(server.Host, server.User, []byte(server.Key))
+	if err != nil {
+		return err
+	}
+
+	err = docker.Deploy(ctx, dockerClient, project, docker.DeployOptions{
+		Stack:        opts.stack,
+		Prune:        opts.prune,
+		ResolveImage: opts.resolveImage,
+		Detach:       opts.detach,
+		Quiet:        opts.quiet,
+		Registries:   cfg.Registries,
+	})
+	if err != nil {
+		return err
 	}
 
 	return nil

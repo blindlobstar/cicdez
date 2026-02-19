@@ -12,11 +12,12 @@ func TestServerAdd(t *testing.T) {
 	setupTestEnv(t)
 
 	opts := &serverAddOptions{
+		name: "production",
 		host: "192.168.1.100",
 		user: "deploy",
 	}
 
-	err := runServerAdd(nil, []string{"production"}, opts)
+	err := runServerAdd(opts)
 	if err != nil {
 		t.Fatalf("runServerAdd failed: %v", err)
 	}
@@ -43,7 +44,6 @@ func TestServerAdd(t *testing.T) {
 func TestServerAddWithKeyFile(t *testing.T) {
 	setupTestEnv(t)
 
-	// Create temp key file
 	keyContent := "-----BEGIN PRIVATE KEY-----\ntest_key\n-----END PRIVATE KEY-----"
 	keyFile := filepath.Join(t.TempDir(), "test_key")
 	if err := os.WriteFile(keyFile, []byte(keyContent), 0600); err != nil {
@@ -51,12 +51,13 @@ func TestServerAddWithKeyFile(t *testing.T) {
 	}
 
 	opts := &serverAddOptions{
+		name:    "staging",
 		host:    "10.0.0.5",
 		user:    "ubuntu",
 		keyFile: keyFile,
 	}
 
-	err := runServerAdd(nil, []string{"staging"}, opts)
+	err := runServerAdd(opts)
 	if err != nil {
 		t.Fatalf("runServerAdd failed: %v", err)
 	}
@@ -80,16 +81,16 @@ func TestServerAddUpdate(t *testing.T) {
 	setupTestEnv(t)
 
 	opts := &serverAddOptions{
+		name: "myserver",
 		host: "old-host.example.com",
 		user: "olduser",
 	}
 
-	err := runServerAdd(nil, []string{"myserver"}, opts)
+	err := runServerAdd(opts)
 	if err != nil {
 		t.Fatalf("runServerAdd failed: %v", err)
 	}
 
-	// Create temp key file for update
 	keyContent := "new_key"
 	keyFile := filepath.Join(t.TempDir(), "new_key")
 	if err := os.WriteFile(keyFile, []byte(keyContent), 0600); err != nil {
@@ -97,12 +98,13 @@ func TestServerAddUpdate(t *testing.T) {
 	}
 
 	opts = &serverAddOptions{
+		name:    "myserver",
 		host:    "new-host.example.com",
 		user:    "newuser",
 		keyFile: keyFile,
 	}
 
-	err = runServerAdd(nil, []string{"myserver"}, opts)
+	err = runServerAdd(opts)
 	if err != nil {
 		t.Fatalf("runServerAdd (update) failed: %v", err)
 	}
@@ -140,16 +142,17 @@ func TestServerList(t *testing.T) {
 
 	for name, s := range servers {
 		opts := &serverAddOptions{
+			name: name,
 			host: s.host,
 			user: s.user,
 		}
-		err := runServerAdd(nil, []string{name}, opts)
+		err := runServerAdd(opts)
 		if err != nil {
 			t.Fatalf("runServerAdd failed for %s: %v", name, err)
 		}
 	}
 
-	err := runServerList(nil, nil)
+	err := runServerList()
 	if err != nil {
 		t.Fatalf("runServerList failed: %v", err)
 	}
@@ -158,7 +161,7 @@ func TestServerList(t *testing.T) {
 func TestServerListEmpty(t *testing.T) {
 	setupTestEnv(t)
 
-	err := runServerList(nil, nil)
+	err := runServerList()
 	if err != nil {
 		t.Fatalf("runServerList failed on empty servers: %v", err)
 	}
@@ -167,17 +170,16 @@ func TestServerListEmpty(t *testing.T) {
 func TestServerRemove(t *testing.T) {
 	setupTestEnv(t)
 
-	opts := &serverAddOptions{
+	err := runServerAdd(&serverAddOptions{
+		name: "temp-server",
 		host: "temp.example.com",
 		user: "temp",
-	}
-
-	err := runServerAdd(nil, []string{"temp-server"}, opts)
+	})
 	if err != nil {
 		t.Fatalf("runServerAdd failed: %v", err)
 	}
 
-	err = runServerRemove(nil, []string{"temp-server"})
+	err = runServerRemove(&serverRemoveOptions{name: "temp-server"})
 	if err != nil {
 		t.Fatalf("runServerRemove failed: %v", err)
 	}
@@ -195,8 +197,160 @@ func TestServerRemove(t *testing.T) {
 func TestServerRemoveNonExistent(t *testing.T) {
 	setupTestEnv(t)
 
-	err := runServerRemove(nil, []string{"non-existent"})
+	err := runServerRemove(&serverRemoveOptions{name: "non-existent"})
 	if err == nil {
 		t.Error("expected error when removing non-existent server, got nil")
+	}
+}
+
+func TestServerAddFirstIsDefault(t *testing.T) {
+	setupTestEnv(t)
+
+	err := runServerAdd(&serverAddOptions{
+		name: "first",
+		host: "first.example.com",
+		user: "deploy",
+	})
+	if err != nil {
+		t.Fatalf("runServerAdd failed: %v", err)
+	}
+
+	config, err := vault.LoadConfig(".")
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+
+	if config.DefaultServer != "first" {
+		t.Errorf("expected default server 'first', got '%s'", config.DefaultServer)
+	}
+
+	err = runServerAdd(&serverAddOptions{
+		name: "second",
+		host: "second.example.com",
+		user: "deploy",
+	})
+	if err != nil {
+		t.Fatalf("runServerAdd failed: %v", err)
+	}
+
+	config, err = vault.LoadConfig(".")
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+
+	if config.DefaultServer != "first" {
+		t.Errorf("expected default server to remain 'first', got '%s'", config.DefaultServer)
+	}
+}
+
+func TestServerSetDefault(t *testing.T) {
+	setupTestEnv(t)
+
+	for _, name := range []string{"server1", "server2"} {
+		err := runServerAdd(&serverAddOptions{
+			name: name,
+			host: name + ".example.com",
+			user: "deploy",
+		})
+		if err != nil {
+			t.Fatalf("runServerAdd failed: %v", err)
+		}
+	}
+
+	config, err := vault.LoadConfig(".")
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+
+	if config.DefaultServer != "server1" {
+		t.Errorf("expected default server 'server1', got '%s'", config.DefaultServer)
+	}
+
+	err = runServerSetDefault(&serverSetDefaultOptions{name: "server2"})
+	if err != nil {
+		t.Fatalf("runServerSetDefault failed: %v", err)
+	}
+
+	config, err = vault.LoadConfig(".")
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+
+	if config.DefaultServer != "server2" {
+		t.Errorf("expected default server 'server2', got '%s'", config.DefaultServer)
+	}
+}
+
+func TestServerSetDefaultNonExistent(t *testing.T) {
+	setupTestEnv(t)
+
+	err := runServerSetDefault(&serverSetDefaultOptions{name: "non-existent"})
+	if err == nil {
+		t.Error("expected error when setting non-existent server as default, got nil")
+	}
+}
+
+func TestServerRemoveReassignsDefault(t *testing.T) {
+	setupTestEnv(t)
+
+	for _, name := range []string{"primary", "secondary"} {
+		err := runServerAdd(&serverAddOptions{
+			name: name,
+			host: name + ".example.com",
+			user: "deploy",
+		})
+		if err != nil {
+			t.Fatalf("runServerAdd failed: %v", err)
+		}
+	}
+
+	config, err := vault.LoadConfig(".")
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+
+	if config.DefaultServer != "primary" {
+		t.Errorf("expected default server 'primary', got '%s'", config.DefaultServer)
+	}
+
+	err = runServerRemove(&serverRemoveOptions{name: "primary"})
+	if err != nil {
+		t.Fatalf("runServerRemove failed: %v", err)
+	}
+
+	config, err = vault.LoadConfig(".")
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+
+	if config.DefaultServer != "secondary" {
+		t.Errorf("expected default server to be reassigned to 'secondary', got '%s'", config.DefaultServer)
+	}
+}
+
+func TestServerRemoveLastClearsDefault(t *testing.T) {
+	setupTestEnv(t)
+
+	err := runServerAdd(&serverAddOptions{
+		name: "only",
+		host: "only.example.com",
+		user: "deploy",
+	})
+	if err != nil {
+		t.Fatalf("runServerAdd failed: %v", err)
+	}
+
+	err = runServerRemove(&serverRemoveOptions{name: "only"})
+	if err != nil {
+		t.Fatalf("runServerRemove failed: %v", err)
+	}
+
+	config, err := vault.LoadConfig(".")
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+
+	if config.DefaultServer != "" {
+		t.Errorf("expected default server to be empty, got '%s'", config.DefaultServer)
 	}
 }

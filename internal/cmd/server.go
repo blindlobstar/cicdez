@@ -10,63 +10,81 @@ import (
 )
 
 type serverAddOptions struct {
+	name    string
 	host    string
 	user    string
 	keyFile string
+}
+
+type serverRemoveOptions struct {
+	name string
+}
+
+type serverSetDefaultOptions struct {
+	name string
 }
 
 func NewServerCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "server",
 		Short: "Manage deployment servers",
-		Long:  "Add, list, and remove servers configured for deployment",
 	}
-	cmd.AddCommand(newServerAddCommand())
-	cmd.AddCommand(newServerListCommand())
-	cmd.AddCommand(newServerRemoveCommand())
-	return cmd
-}
 
-func newServerAddCommand() *cobra.Command {
-	opts := &serverAddOptions{}
-	cmd := &cobra.Command{
+	addOpts := &serverAddOptions{}
+	addCmd := &cobra.Command{
 		Use:   "add <name>",
 		Short: "Add or update a server",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runServerAdd(cmd, args, opts)
+			addOpts.name = args[0]
+			return runServerAdd(addOpts)
 		},
 	}
-	cmd.Flags().StringVar(&opts.host, "host", "", "Server hostname or IP address (required)")
-	cmd.Flags().StringVar(&opts.user, "user", "", "SSH user (required)")
-	cmd.Flags().StringVarP(&opts.keyFile, "key-file", "i", "", "Path to SSH private key file")
-	cmd.MarkFlagRequired("host")
-	cmd.MarkFlagRequired("user")
-	return cmd
-}
+	addCmd.Flags().StringVar(&addOpts.host, "host", "", "Server hostname or IP address (required)")
+	addCmd.Flags().StringVar(&addOpts.user, "user", "", "SSH user (required)")
+	addCmd.Flags().StringVarP(&addOpts.keyFile, "key-file", "i", "", "Path to SSH private key file")
+	addCmd.MarkFlagRequired("host")
+	addCmd.MarkFlagRequired("user")
 
-func newServerListCommand() *cobra.Command {
-	return &cobra.Command{
-		Use:     "list",
-		Aliases: []string{"ls"},
-		Short:   "List all servers",
-		RunE:    runServerList,
-	}
-}
-
-func newServerRemoveCommand() *cobra.Command {
-	return &cobra.Command{
+	removeOpts := &serverRemoveOptions{}
+	removeCmd := &cobra.Command{
 		Use:     "remove <name>",
 		Aliases: []string{"rm", "delete"},
 		Short:   "Remove a server",
 		Args:    cobra.ExactArgs(1),
-		RunE:    runServerRemove,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			removeOpts.name = args[0]
+			return runServerRemove(removeOpts)
+		},
 	}
+
+	setDefaultOpts := &serverSetDefaultOptions{}
+	setDefaultCmd := &cobra.Command{
+		Use:   "set-default <name>",
+		Short: "Set server as default",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			setDefaultOpts.name = args[0]
+			return runServerSetDefault(setDefaultOpts)
+		},
+	}
+
+	cmd.AddCommand(addCmd)
+	cmd.AddCommand(&cobra.Command{
+		Use:     "list",
+		Aliases: []string{"ls"},
+		Short:   "List all servers",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runServerList()
+		},
+	})
+	cmd.AddCommand(removeCmd)
+	cmd.AddCommand(setDefaultCmd)
+
+	return cmd
 }
 
-func runServerAdd(cmd *cobra.Command, args []string, opts *serverAddOptions) error {
-	name := args[0]
-
+func runServerAdd(opts *serverAddOptions) error {
 	var keyContent string
 	if opts.keyFile != "" {
 		data, err := os.ReadFile(opts.keyFile)
@@ -86,25 +104,21 @@ func runServerAdd(cmd *cobra.Command, args []string, opts *serverAddOptions) err
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	if config.Servers == nil {
-		config.Servers = make(map[string]vault.Server)
-	}
-
-	config.Servers[name] = vault.Server{
+	config.AddServer(opts.name, vault.Server{
 		Host: opts.host,
 		User: opts.user,
 		Key:  keyContent,
-	}
+	})
 
 	if err := vault.SaveConfig(cwd, config); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 
-	fmt.Printf("Server '%s' added\n", name)
+	fmt.Printf("Server '%s' added\n", opts.name)
 	return nil
 }
 
-func runServerList(cmd *cobra.Command, args []string) error {
+func runServerList() error {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get current directory: %w", err)
@@ -129,7 +143,11 @@ func runServerList(cmd *cobra.Command, args []string) error {
 	fmt.Println("Servers:")
 	for _, name := range names {
 		server := config.Servers[name]
-		fmt.Printf("  %s:\n", name)
+		defaultMark := ""
+		if name == config.DefaultServer {
+			defaultMark = " *"
+		}
+		fmt.Printf("  %s%s:\n", name, defaultMark)
 		fmt.Printf("    Host: %s\n", server.Host)
 		fmt.Printf("    User: %s\n", server.User)
 		if server.Key != "" {
@@ -140,9 +158,7 @@ func runServerList(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func runServerRemove(cmd *cobra.Command, args []string) error {
-	name := args[0]
-
+func runServerRemove(opts *serverRemoveOptions) error {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get current directory: %w", err)
@@ -153,16 +169,43 @@ func runServerRemove(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	if _, exists := config.Servers[name]; !exists {
-		return fmt.Errorf("server '%s' not found", name)
+	if _, exists := config.Servers[opts.name]; !exists {
+		return fmt.Errorf("server '%s' not found", opts.name)
 	}
 
-	delete(config.Servers, name)
+	newDefault := config.RemoveServer(opts.name)
 
 	if err := vault.SaveConfig(cwd, config); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 
-	fmt.Printf("Server '%s' removed\n", name)
+	if newDefault != "" {
+		fmt.Printf("Server '%s' removed. New default: %s\n", opts.name, newDefault)
+	} else {
+		fmt.Printf("Server '%s' removed\n", opts.name)
+	}
+	return nil
+}
+
+func runServerSetDefault(opts *serverSetDefaultOptions) error {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to get current directory: %w", err)
+	}
+
+	config, err := vault.LoadConfig(cwd)
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	if err := config.SetDefault(opts.name); err != nil {
+		return err
+	}
+
+	if err := vault.SaveConfig(cwd, config); err != nil {
+		return fmt.Errorf("failed to save config: %w", err)
+	}
+
+	fmt.Printf("Server '%s' set as default\n", opts.name)
 	return nil
 }
