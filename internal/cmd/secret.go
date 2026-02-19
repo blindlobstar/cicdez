@@ -11,59 +11,67 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+type secretAddOptions struct {
+	name  string
+	value string
+}
+
+type secretRemoveOptions struct {
+	name string
+}
+
 func NewSecretCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "secret",
 		Short: "Manage encrypted secrets",
-		Long:  "Add, list, edit, and remove encrypted secrets stored in .cicdez/secrets.age",
 	}
-	cmd.AddCommand(newSecretAddCommand())
-	cmd.AddCommand(newSecretListCommand())
-	cmd.AddCommand(newSecretEditCommand())
-	cmd.AddCommand(newSecretRemoveCommand())
-	return cmd
-}
 
-func newSecretAddCommand() *cobra.Command {
-	return &cobra.Command{
+	addOpts := &secretAddOptions{}
+	addCmd := &cobra.Command{
 		Use:   "add <name> <value>",
 		Short: "Add or update a secret",
 		Args:  cobra.ExactArgs(2),
-		RunE:  runSecretAdd,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			addOpts.name = args[0]
+			addOpts.value = args[1]
+			return runSecretAdd(addOpts)
+		},
 	}
-}
 
-func newSecretListCommand() *cobra.Command {
-	return &cobra.Command{
-		Use:     "list",
-		Aliases: []string{"ls"},
-		Short:   "List all secret names",
-		RunE:    runSecretList,
-	}
-}
-
-func newSecretEditCommand() *cobra.Command {
-	return &cobra.Command{
-		Use:   "edit",
-		Short: "Edit all secrets using $EDITOR",
-		RunE:  runSecretEdit,
-	}
-}
-
-func newSecretRemoveCommand() *cobra.Command {
-	return &cobra.Command{
+	removeOpts := &secretRemoveOptions{}
+	removeCmd := &cobra.Command{
 		Use:     "remove <name>",
 		Aliases: []string{"rm", "delete"},
 		Short:   "Remove a secret",
 		Args:    cobra.ExactArgs(1),
-		RunE:    runSecretRemove,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			removeOpts.name = args[0]
+			return runSecretRemove(removeOpts)
+		},
 	}
+
+	cmd.AddCommand(addCmd)
+	cmd.AddCommand(&cobra.Command{
+		Use:     "list",
+		Aliases: []string{"ls"},
+		Short:   "List all secret names",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runSecretList()
+		},
+	})
+	cmd.AddCommand(&cobra.Command{
+		Use:   "edit",
+		Short: "Edit all secrets using $EDITOR",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runSecretEdit()
+		},
+	})
+	cmd.AddCommand(removeCmd)
+
+	return cmd
 }
 
-func runSecretAdd(cmd *cobra.Command, args []string) error {
-	name := args[0]
-	value := args[1]
-
+func runSecretAdd(opts *secretAddOptions) error {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get current directory: %w", err)
@@ -78,17 +86,17 @@ func runSecretAdd(cmd *cobra.Command, args []string) error {
 		secrets.Values = make(map[string]string)
 	}
 
-	secrets.Values[name] = value
+	secrets.Values[opts.name] = opts.value
 
 	if err := vault.SaveSecrets(cwd, secrets); err != nil {
 		return fmt.Errorf("failed to save secrets: %w", err)
 	}
 
-	fmt.Printf("Secret '%s' added\n", name)
+	fmt.Printf("Secret '%s' added\n", opts.name)
 	return nil
 }
 
-func runSecretList(cmd *cobra.Command, args []string) error {
+func runSecretList() error {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get current directory: %w", err)
@@ -118,7 +126,7 @@ func runSecretList(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func runSecretEdit(cmd *cobra.Command, args []string) error {
+func runSecretEdit() error {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get current directory: %w", err)
@@ -179,9 +187,7 @@ func runSecretEdit(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func runSecretRemove(cmd *cobra.Command, args []string) error {
-	name := args[0]
-
+func runSecretRemove(opts *secretRemoveOptions) error {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get current directory: %w", err)
@@ -192,16 +198,16 @@ func runSecretRemove(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to load secrets: %w", err)
 	}
 
-	if _, exists := secrets.Values[name]; !exists {
-		return fmt.Errorf("secret '%s' not found", name)
+	if _, exists := secrets.Values[opts.name]; !exists {
+		return fmt.Errorf("secret '%s' not found", opts.name)
 	}
 
-	delete(secrets.Values, name)
+	delete(secrets.Values, opts.name)
 
 	if err := vault.SaveSecrets(cwd, secrets); err != nil {
 		return fmt.Errorf("failed to save secrets: %w", err)
 	}
 
-	fmt.Printf("Secret '%s' removed\n", name)
+	fmt.Printf("Secret '%s' removed\n", opts.name)
 	return nil
 }

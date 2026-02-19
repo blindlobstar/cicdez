@@ -23,9 +23,15 @@ func DefaultRegistryClientFactory() (RegistryClient, error) {
 }
 
 type registryAddOptions struct {
+	server        string
 	username      string
 	password      string
 	clientFactory RegistryClientFactory
+	ctx           context.Context
+}
+
+type registryRemoveOptions struct {
+	server string
 }
 
 func NewRegistryCommand() *cobra.Command {
@@ -36,55 +42,51 @@ func NewRegistryCommandWithFactory(clientFactory RegistryClientFactory) *cobra.C
 	cmd := &cobra.Command{
 		Use:   "registry",
 		Short: "Manage Docker registry credentials",
-		Long:  "Add, list, and remove Docker registry authentication credentials",
 	}
-	cmd.AddCommand(newRegistryAddCommand(clientFactory))
-	cmd.AddCommand(newRegistryListCommand())
-	cmd.AddCommand(newRegistryRemoveCommand())
-	return cmd
-}
 
-func newRegistryAddCommand(clientFactory RegistryClientFactory) *cobra.Command {
-	opts := &registryAddOptions{
-		clientFactory: clientFactory,
-	}
-	cmd := &cobra.Command{
+	addOpts := &registryAddOptions{clientFactory: clientFactory}
+	addCmd := &cobra.Command{
 		Use:   "add <server>",
 		Short: "Add or update a registry",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runRegistryAdd(cmd, args, opts)
+			addOpts.server = args[0]
+			addOpts.ctx = cmd.Context()
+			return runRegistryAdd(addOpts)
 		},
 	}
-	cmd.Flags().StringVar(&opts.username, "username", "", "Registry username (required)")
-	cmd.Flags().StringVar(&opts.password, "password", "", "Registry password (required)")
-	cmd.MarkFlagRequired("username")
-	cmd.MarkFlagRequired("password")
-	return cmd
-}
+	addCmd.Flags().StringVar(&addOpts.username, "username", "", "Registry username (required)")
+	addCmd.Flags().StringVar(&addOpts.password, "password", "", "Registry password (required)")
+	addCmd.MarkFlagRequired("username")
+	addCmd.MarkFlagRequired("password")
 
-func newRegistryListCommand() *cobra.Command {
-	return &cobra.Command{
-		Use:     "list",
-		Aliases: []string{"ls"},
-		Short:   "List all registries",
-		RunE:    runRegistryList,
-	}
-}
-
-func newRegistryRemoveCommand() *cobra.Command {
-	return &cobra.Command{
+	removeOpts := &registryRemoveOptions{}
+	removeCmd := &cobra.Command{
 		Use:     "remove <server>",
 		Aliases: []string{"rm", "delete"},
 		Short:   "Remove a registry",
 		Args:    cobra.ExactArgs(1),
-		RunE:    runRegistryRemove,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			removeOpts.server = args[0]
+			return runRegistryRemove(removeOpts)
+		},
 	}
+
+	cmd.AddCommand(addCmd)
+	cmd.AddCommand(&cobra.Command{
+		Use:     "list",
+		Aliases: []string{"ls"},
+		Short:   "List all registries",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runRegistryList()
+		},
+	})
+	cmd.AddCommand(removeCmd)
+
+	return cmd
 }
 
-func runRegistryAdd(cmd *cobra.Command, args []string, opts *registryAddOptions) error {
-	server := args[0]
-
+func runRegistryAdd(opts *registryAddOptions) error {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get current directory: %w", err)
@@ -93,21 +95,25 @@ func runRegistryAdd(cmd *cobra.Command, args []string, opts *registryAddOptions)
 	authConfig := registry.AuthConfig{
 		Username:      opts.username,
 		Password:      opts.password,
-		ServerAddress: server,
+		ServerAddress: opts.server,
 	}
+
 	dockerClient, err := opts.clientFactory()
 	if err != nil {
 		return fmt.Errorf("failed to create docker client: %w", err)
 	}
+
 	loginOpts := client.RegistryLoginOptions{
 		Username:      opts.username,
 		Password:      opts.password,
-		ServerAddress: server,
+		ServerAddress: opts.server,
 	}
-	resp, err := dockerClient.RegistryLogin(cmd.Context(), loginOpts)
+
+	resp, err := dockerClient.RegistryLogin(opts.ctx, loginOpts)
 	if err != nil {
 		return err
 	}
+
 	if resp.Auth.IdentityToken != "" {
 		authConfig.Password = ""
 		authConfig.IdentityToken = resp.Auth.IdentityToken
@@ -122,7 +128,7 @@ func runRegistryAdd(cmd *cobra.Command, args []string, opts *registryAddOptions)
 		config.Registries = make(map[string]registry.AuthConfig)
 	}
 
-	config.Registries[server] = authConfig
+	config.Registries[opts.server] = authConfig
 
 	if err := vault.SaveConfig(cwd, config); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
@@ -135,7 +141,7 @@ func runRegistryAdd(cmd *cobra.Command, args []string, opts *registryAddOptions)
 	return nil
 }
 
-func runRegistryList(cmd *cobra.Command, args []string) error {
+func runRegistryList() error {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get current directory: %w", err)
@@ -169,9 +175,7 @@ func runRegistryList(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func runRegistryRemove(cmd *cobra.Command, args []string) error {
-	server := args[0]
-
+func runRegistryRemove(opts *registryRemoveOptions) error {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get current directory: %w", err)
@@ -182,16 +186,16 @@ func runRegistryRemove(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	if _, exists := config.Registries[server]; !exists {
-		return fmt.Errorf("registry '%s' not found", server)
+	if _, exists := config.Registries[opts.server]; !exists {
+		return fmt.Errorf("registry '%s' not found", opts.server)
 	}
 
-	delete(config.Registries, server)
+	delete(config.Registries, opts.server)
 
 	if err := vault.SaveConfig(cwd, config); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 
-	fmt.Printf("Registry '%s' removed\n", server)
+	fmt.Printf("Registry '%s' removed\n", opts.server)
 	return nil
 }
