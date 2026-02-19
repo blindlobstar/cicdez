@@ -14,8 +14,9 @@ import (
 	"github.com/vrotherford/cicdez/internal/vault"
 )
 
-type deployCommandOptions struct {
+type deployOptions struct {
 	composeFiles []string
+	stack        string
 	prune        bool
 	resolveImage string
 	detach       bool
@@ -24,17 +25,21 @@ type deployCommandOptions struct {
 	noCache      bool
 	pull         bool
 	server       string
+	ctx          context.Context
 }
 
 func NewDeployCommand() *cobra.Command {
-	opts := &deployCommandOptions{}
+	opts := &deployOptions{}
 	cmd := &cobra.Command{
 		Use:   "deploy [stack]",
 		Short: "Deploy a stack to Docker Swarm",
-		Long:  "Deploy services defined in compose file to Docker Swarm cluster. If stack name is not provided, uses the project name from compose file.",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runDeployCommand(cmd, args, opts)
+			if len(args) > 0 {
+				opts.stack = args[0]
+			}
+			opts.ctx = cmd.Context()
+			return runDeploy(opts)
 		},
 	}
 	cmd.Flags().StringArrayVarP(&opts.composeFiles, "file", "f", []string{"compose.yaml"}, "Compose file path(s)")
@@ -49,40 +54,7 @@ func NewDeployCommand() *cobra.Command {
 	return cmd
 }
 
-type deployOptions struct {
-	stack        string
-	prune        bool
-	resolveImage string
-	detach       bool
-	quiet        bool
-	noBuild      bool
-	noCache      bool
-	pull         bool
-	server       string
-}
-
-func runDeployCommand(cmd *cobra.Command, args []string, cmdOpts *deployCommandOptions) error {
-	var stack string
-	if len(args) > 0 {
-		stack = args[0]
-	}
-
-	opts := deployOptions{
-		stack:        stack,
-		prune:        cmdOpts.prune,
-		resolveImage: cmdOpts.resolveImage,
-		detach:       cmdOpts.detach,
-		quiet:        cmdOpts.quiet,
-		noBuild:      cmdOpts.noBuild,
-		noCache:      cmdOpts.noCache,
-		pull:         cmdOpts.pull,
-		server:       cmdOpts.server,
-	}
-
-	return runDeploy(cmd.Context(), opts, cmdOpts.composeFiles)
-}
-
-func runDeploy(ctx context.Context, opts deployOptions, files []string) error {
+func runDeploy(opts *deployOptions) error {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get current directory: %w", err)
@@ -93,7 +65,7 @@ func runDeploy(ctx context.Context, opts deployOptions, files []string) error {
 		return err
 	}
 
-	project, err := docker.LoadCompose(ctx, os.Environ(), files...)
+	project, err := docker.LoadCompose(opts.ctx, os.Environ(), opts.composeFiles...)
 	if err != nil {
 		return err
 	}
@@ -115,7 +87,6 @@ func runDeploy(ctx context.Context, opts deployOptions, files []string) error {
 		return fmt.Errorf("failed to process sensitive secrets: %w", err)
 	}
 
-	// Build and push images if not skipped
 	if !opts.noBuild && docker.HasBuildConfig(project) {
 		dockerClient, err := client.New(client.WithHostFromEnv())
 		if err != nil {
@@ -131,7 +102,7 @@ func runDeploy(ctx context.Context, opts deployOptions, files []string) error {
 			Push:       true,
 		}
 
-		if err := docker.Build(ctx, dockerClient, project, buildOpts); err != nil {
+		if err := docker.Build(opts.ctx, dockerClient, project, buildOpts); err != nil {
 			return fmt.Errorf("failed to build and push images: %w", err)
 		}
 	}
@@ -146,7 +117,7 @@ func runDeploy(ctx context.Context, opts deployOptions, files []string) error {
 		return err
 	}
 
-	err = docker.Deploy(ctx, dockerClient, project, docker.DeployOptions{
+	err = docker.Deploy(opts.ctx, dockerClient, project, docker.DeployOptions{
 		Stack:        opts.stack,
 		Prune:        opts.prune,
 		ResolveImage: opts.resolveImage,

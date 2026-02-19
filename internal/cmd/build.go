@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -10,21 +11,24 @@ import (
 	"github.com/vrotherford/cicdez/internal/vault"
 )
 
-type buildCommandOptions struct {
+type buildOptions struct {
 	composeFile string
+	services    []string
 	noCache     bool
 	pull        bool
 	push        bool
+	ctx         context.Context
 }
 
 func NewBuildCommand() *cobra.Command {
-	opts := &buildCommandOptions{}
+	opts := &buildOptions{}
 	cmd := &cobra.Command{
 		Use:   "build [services...]",
 		Short: "Build images from compose file",
-		Long:  "Build Docker images for services defined in compose file",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runBuild(cmd, args, opts)
+			opts.services = args
+			opts.ctx = cmd.Context()
+			return runBuild(opts)
 		},
 	}
 	cmd.Flags().StringVarP(&opts.composeFile, "file", "f", "compose.yaml", "Compose file path")
@@ -34,15 +38,13 @@ func NewBuildCommand() *cobra.Command {
 	return cmd
 }
 
-func runBuild(cmd *cobra.Command, args []string, cmdOpts *buildCommandOptions) error {
-	ctx := cmd.Context()
-
+func runBuild(opts *buildOptions) error {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get current directory: %w", err)
 	}
 
-	project, err := docker.LoadCompose(ctx, nil, cmdOpts.composeFile)
+	project, err := docker.LoadCompose(opts.ctx, nil, opts.composeFile)
 	if err != nil {
 		return fmt.Errorf("failed to load compose file: %w", err)
 	}
@@ -59,18 +61,18 @@ func runBuild(cmd *cobra.Command, args []string, cmdOpts *buildCommandOptions) e
 	defer dockerClient.Close()
 
 	servicesToBuild := make(map[string]bool)
-	for _, arg := range args {
-		servicesToBuild[arg] = true
+	for _, svc := range opts.services {
+		servicesToBuild[svc] = true
 	}
 
-	opts := docker.BuildOptions{
+	buildOpts := docker.BuildOptions{
 		Services:   servicesToBuild,
 		Cwd:        cwd,
 		Registries: config.Registries,
-		NoCache:    cmdOpts.noCache,
-		Pull:       cmdOpts.pull,
-		Push:       cmdOpts.push,
+		NoCache:    opts.noCache,
+		Pull:       opts.pull,
+		Push:       opts.push,
 	}
 
-	return docker.Build(ctx, dockerClient, project, opts)
+	return docker.Build(opts.ctx, dockerClient, project, buildOpts)
 }
