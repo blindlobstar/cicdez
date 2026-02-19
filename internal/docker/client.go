@@ -10,7 +10,7 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-func NewClientSSH(host, user string, privateKey []byte) (client.APIClient, error) {
+func NewClientSSH(host string, port int, user string, privateKey []byte) (client.APIClient, error) {
 	signer, err := ssh.ParsePrivateKey(privateKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse private key: %w", err)
@@ -24,10 +24,10 @@ func NewClientSSH(host, user string, privateKey []byte) (client.APIClient, error
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 	}
 
-	addr := host
-	if _, _, err := net.SplitHostPort(host); err != nil {
-		addr = host + ":22"
+	if port == 0 {
+		port = 22
 	}
+	addr := fmt.Sprintf("%s:%d", host, port)
 
 	sshClient, err := ssh.Dial("tcp", addr, sshConfig)
 	if err != nil {
