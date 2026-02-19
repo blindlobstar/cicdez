@@ -64,6 +64,7 @@ func (c *Config) GetServer(name string) (Server, error) {
 
 type Server struct {
 	Host string `yaml:"host"`
+	Port int    `yaml:"port,omitempty"`
 	User string `yaml:"user"`
 	Key  string `yaml:"key"`
 }

@@ -112,7 +112,7 @@ func runDeploy(opts *deployOptions) error {
 		return err
 	}
 
-	dockerClient, err := docker.NewClientSSH(server.Host, server.User, []byte(server.Key))
+	dockerClient, err := docker.NewClientSSH(server.Host, server.Port, server.User, []byte(server.Key))
 	if err != nil {
 		return err
 	}

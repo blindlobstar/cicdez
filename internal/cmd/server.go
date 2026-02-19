@@ -2,8 +2,10 @@ package cmd
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"sort"
+	"strconv"
 
 	"github.com/spf13/cobra"
 	"github.com/vrotherford/cicdez/internal/vault"
@@ -12,6 +14,7 @@ import (
 type serverAddOptions struct {
 	name    string
 	host    string
+	port    int
 	user    string
 	keyFile string
 }
@@ -40,11 +43,10 @@ func NewServerCommand() *cobra.Command {
 			return runServerAdd(addOpts)
 		},
 	}
-	addCmd.Flags().StringVar(&addOpts.host, "host", "", "Server hostname or IP address (required)")
-	addCmd.Flags().StringVar(&addOpts.user, "user", "", "SSH user (required)")
+	addCmd.Flags().StringVarP(&addOpts.host, "host", "H", "", "Server hostname or IP address, optionally with port (host:port)")
+	addCmd.Flags().StringVarP(&addOpts.user, "user", "u", "root", "SSH user")
 	addCmd.Flags().StringVarP(&addOpts.keyFile, "key-file", "i", "", "Path to SSH private key file")
 	addCmd.MarkFlagRequired("host")
-	addCmd.MarkFlagRequired("user")
 
 	removeOpts := &serverRemoveOptions{}
 	removeCmd := &cobra.Command{
@@ -85,6 +87,16 @@ func NewServerCommand() *cobra.Command {
 }
 
 func runServerAdd(opts *serverAddOptions) error {
+	host := opts.host
+	port := 22
+
+	if h, p, err := net.SplitHostPort(opts.host); err == nil {
+		host = h
+		if pn, err := strconv.Atoi(p); err == nil {
+			port = pn
+		}
+	}
+
 	var keyContent string
 	if opts.keyFile != "" {
 		data, err := os.ReadFile(opts.keyFile)
@@ -105,7 +117,8 @@ func runServerAdd(opts *serverAddOptions) error {
 	}
 
 	config.AddServer(opts.name, vault.Server{
-		Host: opts.host,
+		Host: host,
+		Port: port,
 		User: opts.user,
 		Key:  keyContent,
 	})
@@ -148,7 +161,11 @@ func runServerList() error {
 			defaultMark = " *"
 		}
 		fmt.Printf("  %s%s:\n", name, defaultMark)
-		fmt.Printf("    Host: %s\n", server.Host)
+		port := server.Port
+		if port == 0 {
+			port = 22
+		}
+		fmt.Printf("    Host: %s:%d\n", server.Host, port)
 		fmt.Printf("    User: %s\n", server.User)
 		if server.Key != "" {
 			fmt.Printf("    Key: <configured>\n")

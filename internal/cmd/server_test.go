@@ -36,8 +36,74 @@ func TestServerAdd(t *testing.T) {
 		t.Errorf("expected host '192.168.1.100', got '%s'", server.Host)
 	}
 
+	if server.Port != 22 {
+		t.Errorf("expected port 22, got %d", server.Port)
+	}
+
 	if server.User != "deploy" {
 		t.Errorf("expected user 'deploy', got '%s'", server.User)
+	}
+}
+
+func TestServerAddDefaultUser(t *testing.T) {
+	setupTestEnv(t)
+
+	opts := &serverAddOptions{
+		name: "prod",
+		host: "192.168.1.10",
+		user: "root",
+	}
+
+	err := runServerAdd(opts)
+	if err != nil {
+		t.Fatalf("runServerAdd failed: %v", err)
+	}
+
+	config, err := vault.LoadConfig(".")
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+
+	server, exists := config.Servers["prod"]
+	if !exists {
+		t.Error("expected prod server to exist")
+	}
+
+	if server.User != "root" {
+		t.Errorf("expected user 'root', got '%s'", server.User)
+	}
+}
+
+func TestServerAddWithPort(t *testing.T) {
+	setupTestEnv(t)
+
+	opts := &serverAddOptions{
+		name: "staging",
+		host: "192.168.1.10:2222",
+		user: "deploy",
+	}
+
+	err := runServerAdd(opts)
+	if err != nil {
+		t.Fatalf("runServerAdd failed: %v", err)
+	}
+
+	config, err := vault.LoadConfig(".")
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+
+	server, exists := config.Servers["staging"]
+	if !exists {
+		t.Error("expected staging server to exist")
+	}
+
+	if server.Host != "192.168.1.10" {
+		t.Errorf("expected host '192.168.1.10', got '%s'", server.Host)
+	}
+
+	if server.Port != 2222 {
+		t.Errorf("expected port 2222, got %d", server.Port)
 	}
 }
 
