@@ -14,6 +14,7 @@ func NewRootCommand() *cobra.Command {
 - Deploying to Docker Swarm with version control
 - Tracking configuration changes via git`,
 	}
+	cmd.AddCommand(NewKeyCommand())
 	cmd.AddCommand(NewSecretCommand())
 	cmd.AddCommand(NewServerCommand())
 	cmd.AddCommand(NewRegistryCommand())
