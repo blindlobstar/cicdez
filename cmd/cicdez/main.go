@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"github.com/vrotherford/cicdez/internal/cmd"
+	"github.com/blindlobstar/cicdez/internal/cmd"
 )
 
 func main() {

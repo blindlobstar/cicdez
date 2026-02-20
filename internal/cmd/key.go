@@ -8,7 +8,7 @@ import (
 
 	"filippo.io/age"
 	"github.com/spf13/cobra"
-	"github.com/vrotherford/cicdez/internal/vault"
+	"github.com/blindlobstar/cicdez/internal/vault"
 )
 
 type keyGenerateOptions struct {
