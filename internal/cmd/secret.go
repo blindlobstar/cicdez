@@ -26,7 +26,7 @@ func NewSecretCommand() *cobra.Command {
 		Short: "Manage encrypted secrets",
 	}
 
-	addOpts := &secretAddOptions{}
+	addOpts := secretAddOptions{}
 	addCmd := &cobra.Command{
 		Use:   "add <name> <value>",
 		Short: "Add or update a secret",
@@ -38,7 +38,7 @@ func NewSecretCommand() *cobra.Command {
 		},
 	}
 
-	removeOpts := &secretRemoveOptions{}
+	removeOpts := secretRemoveOptions{}
 	removeCmd := &cobra.Command{
 		Use:     "remove <name>",
 		Aliases: []string{"rm", "delete"},
@@ -71,7 +71,7 @@ func NewSecretCommand() *cobra.Command {
 	return cmd
 }
 
-func runSecretAdd(opts *secretAddOptions) error {
+func runSecretAdd(opts secretAddOptions) error {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get current directory: %w", err)
@@ -187,7 +187,7 @@ func runSecretEdit() error {
 	return nil
 }
 
-func runSecretRemove(opts *secretRemoveOptions) error {
+func runSecretRemove(opts secretRemoveOptions) error {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get current directory: %w", err)

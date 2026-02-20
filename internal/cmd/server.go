@@ -33,7 +33,7 @@ func NewServerCommand() *cobra.Command {
 		Short: "Manage deployment servers",
 	}
 
-	addOpts := &serverAddOptions{}
+	addOpts := serverAddOptions{}
 	addCmd := &cobra.Command{
 		Use:   "add <name>",
 		Short: "Add or update a server",
@@ -48,7 +48,7 @@ func NewServerCommand() *cobra.Command {
 	addCmd.Flags().StringVarP(&addOpts.keyFile, "key-file", "i", "", "Path to SSH private key file")
 	addCmd.MarkFlagRequired("host")
 
-	removeOpts := &serverRemoveOptions{}
+	removeOpts := serverRemoveOptions{}
 	removeCmd := &cobra.Command{
 		Use:     "remove <name>",
 		Aliases: []string{"rm", "delete"},
@@ -60,7 +60,7 @@ func NewServerCommand() *cobra.Command {
 		},
 	}
 
-	setDefaultOpts := &serverSetDefaultOptions{}
+	setDefaultOpts := serverSetDefaultOptions{}
 	setDefaultCmd := &cobra.Command{
 		Use:   "set-default <name>",
 		Short: "Set server as default",
@@ -86,7 +86,7 @@ func NewServerCommand() *cobra.Command {
 	return cmd
 }
 
-func runServerAdd(opts *serverAddOptions) error {
+func runServerAdd(opts serverAddOptions) error {
 	host := opts.host
 	port := 22
 
@@ -175,7 +175,7 @@ func runServerList() error {
 	return nil
 }
 
-func runServerRemove(opts *serverRemoveOptions) error {
+func runServerRemove(opts serverRemoveOptions) error {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get current directory: %w", err)
@@ -204,7 +204,7 @@ func runServerRemove(opts *serverRemoveOptions) error {
 	return nil
 }
 
-func runServerSetDefault(opts *serverSetDefaultOptions) error {
+func runServerSetDefault(opts serverSetDefaultOptions) error {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get current directory: %w", err)
