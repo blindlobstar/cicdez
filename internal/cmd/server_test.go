@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/vrotherford/cicdez/internal/vault"
+	"github.com/blindlobstar/cicdez/internal/vault"
 )
 
 func TestServerAdd(t *testing.T) {

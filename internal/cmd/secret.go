@@ -7,7 +7,7 @@ import (
 	"sort"
 
 	"github.com/spf13/cobra"
-	"github.com/vrotherford/cicdez/internal/vault"
+	"github.com/blindlobstar/cicdez/internal/vault"
 	"gopkg.in/yaml.v3"
 )
 

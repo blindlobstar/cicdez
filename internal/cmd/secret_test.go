@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"filippo.io/age"
-	"github.com/vrotherford/cicdez/internal/vault"
+	"github.com/blindlobstar/cicdez/internal/vault"
 )
 
 func setupTestEnv(t *testing.T) string {

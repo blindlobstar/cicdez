@@ -1,4 +1,4 @@
-module github.com/vrotherford/cicdez
+module github.com/blindlobstar/cicdez
 
 go 1.25.1
 

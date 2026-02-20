@@ -6,7 +6,7 @@ import (
 
 	"github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
-	"github.com/vrotherford/cicdez/internal/vault"
+	"github.com/blindlobstar/cicdez/internal/vault"
 )
 
 type mockRegistryClient struct {

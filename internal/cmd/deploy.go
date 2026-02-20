@@ -10,8 +10,8 @@ import (
 	"github.com/compose-spec/compose-go/v2/types"
 	"github.com/moby/moby/client"
 	"github.com/spf13/cobra"
-	"github.com/vrotherford/cicdez/internal/docker"
-	"github.com/vrotherford/cicdez/internal/vault"
+	"github.com/blindlobstar/cicdez/internal/docker"
+	"github.com/blindlobstar/cicdez/internal/vault"
 )
 
 type deployOptions struct {
