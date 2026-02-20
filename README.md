@@ -7,7 +7,7 @@ Simple CLI to manage deployments, configuration, and secrets. Everything stays e
 ## Installation
 
 ```bash
-go install github.com/blindlobstar/cicdez/cmd/cicdez@latest
+go install github.com/blindlobstar/cicdez@latest
 ```
 
 ## Documentation
