@@ -11,7 +11,7 @@ import (
 func TestServerAdd(t *testing.T) {
 	setupTestEnv(t)
 
-	opts := &serverAddOptions{
+	opts := serverAddOptions{
 		name: "production",
 		host: "192.168.1.100",
 		user: "deploy",
@@ -48,7 +48,7 @@ func TestServerAdd(t *testing.T) {
 func TestServerAddDefaultUser(t *testing.T) {
 	setupTestEnv(t)
 
-	opts := &serverAddOptions{
+	opts := serverAddOptions{
 		name: "prod",
 		host: "192.168.1.10",
 		user: "root",
@@ -77,7 +77,7 @@ func TestServerAddDefaultUser(t *testing.T) {
 func TestServerAddWithPort(t *testing.T) {
 	setupTestEnv(t)
 
-	opts := &serverAddOptions{
+	opts := serverAddOptions{
 		name: "staging",
 		host: "192.168.1.10:2222",
 		user: "deploy",
@@ -116,7 +116,7 @@ func TestServerAddWithKeyFile(t *testing.T) {
 		t.Fatalf("failed to write key file: %v", err)
 	}
 
-	opts := &serverAddOptions{
+	opts := serverAddOptions{
 		name:    "staging",
 		host:    "10.0.0.5",
 		user:    "ubuntu",
@@ -146,7 +146,7 @@ func TestServerAddWithKeyFile(t *testing.T) {
 func TestServerAddUpdate(t *testing.T) {
 	setupTestEnv(t)
 
-	opts := &serverAddOptions{
+	opts := serverAddOptions{
 		name: "myserver",
 		host: "old-host.example.com",
 		user: "olduser",
@@ -163,7 +163,7 @@ func TestServerAddUpdate(t *testing.T) {
 		t.Fatalf("failed to write key file: %v", err)
 	}
 
-	opts = &serverAddOptions{
+	opts = serverAddOptions{
 		name:    "myserver",
 		host:    "new-host.example.com",
 		user:    "newuser",
@@ -207,7 +207,7 @@ func TestServerList(t *testing.T) {
 	}
 
 	for name, s := range servers {
-		opts := &serverAddOptions{
+		opts := serverAddOptions{
 			name: name,
 			host: s.host,
 			user: s.user,
@@ -236,7 +236,7 @@ func TestServerListEmpty(t *testing.T) {
 func TestServerRemove(t *testing.T) {
 	setupTestEnv(t)
 
-	err := runServerAdd(&serverAddOptions{
+	err := runServerAdd(serverAddOptions{
 		name: "temp-server",
 		host: "temp.example.com",
 		user: "temp",
@@ -245,7 +245,7 @@ func TestServerRemove(t *testing.T) {
 		t.Fatalf("runServerAdd failed: %v", err)
 	}
 
-	err = runServerRemove(&serverRemoveOptions{name: "temp-server"})
+	err = runServerRemove(serverRemoveOptions{name: "temp-server"})
 	if err != nil {
 		t.Fatalf("runServerRemove failed: %v", err)
 	}
@@ -263,7 +263,7 @@ func TestServerRemove(t *testing.T) {
 func TestServerRemoveNonExistent(t *testing.T) {
 	setupTestEnv(t)
 
-	err := runServerRemove(&serverRemoveOptions{name: "non-existent"})
+	err := runServerRemove(serverRemoveOptions{name: "non-existent"})
 	if err == nil {
 		t.Error("expected error when removing non-existent server, got nil")
 	}
@@ -272,7 +272,7 @@ func TestServerRemoveNonExistent(t *testing.T) {
 func TestServerAddFirstIsDefault(t *testing.T) {
 	setupTestEnv(t)
 
-	err := runServerAdd(&serverAddOptions{
+	err := runServerAdd(serverAddOptions{
 		name: "first",
 		host: "first.example.com",
 		user: "deploy",
@@ -290,7 +290,7 @@ func TestServerAddFirstIsDefault(t *testing.T) {
 		t.Errorf("expected default server 'first', got '%s'", config.DefaultServer)
 	}
 
-	err = runServerAdd(&serverAddOptions{
+	err = runServerAdd(serverAddOptions{
 		name: "second",
 		host: "second.example.com",
 		user: "deploy",
@@ -313,7 +313,7 @@ func TestServerSetDefault(t *testing.T) {
 	setupTestEnv(t)
 
 	for _, name := range []string{"server1", "server2"} {
-		err := runServerAdd(&serverAddOptions{
+		err := runServerAdd(serverAddOptions{
 			name: name,
 			host: name + ".example.com",
 			user: "deploy",
@@ -332,7 +332,7 @@ func TestServerSetDefault(t *testing.T) {
 		t.Errorf("expected default server 'server1', got '%s'", config.DefaultServer)
 	}
 
-	err = runServerSetDefault(&serverSetDefaultOptions{name: "server2"})
+	err = runServerSetDefault(serverSetDefaultOptions{name: "server2"})
 	if err != nil {
 		t.Fatalf("runServerSetDefault failed: %v", err)
 	}
@@ -350,7 +350,7 @@ func TestServerSetDefault(t *testing.T) {
 func TestServerSetDefaultNonExistent(t *testing.T) {
 	setupTestEnv(t)
 
-	err := runServerSetDefault(&serverSetDefaultOptions{name: "non-existent"})
+	err := runServerSetDefault(serverSetDefaultOptions{name: "non-existent"})
 	if err == nil {
 		t.Error("expected error when setting non-existent server as default, got nil")
 	}
@@ -360,7 +360,7 @@ func TestServerRemoveReassignsDefault(t *testing.T) {
 	setupTestEnv(t)
 
 	for _, name := range []string{"primary", "secondary"} {
-		err := runServerAdd(&serverAddOptions{
+		err := runServerAdd(serverAddOptions{
 			name: name,
 			host: name + ".example.com",
 			user: "deploy",
@@ -379,7 +379,7 @@ func TestServerRemoveReassignsDefault(t *testing.T) {
 		t.Errorf("expected default server 'primary', got '%s'", config.DefaultServer)
 	}
 
-	err = runServerRemove(&serverRemoveOptions{name: "primary"})
+	err = runServerRemove(serverRemoveOptions{name: "primary"})
 	if err != nil {
 		t.Fatalf("runServerRemove failed: %v", err)
 	}
@@ -397,7 +397,7 @@ func TestServerRemoveReassignsDefault(t *testing.T) {
 func TestServerRemoveLastClearsDefault(t *testing.T) {
 	setupTestEnv(t)
 
-	err := runServerAdd(&serverAddOptions{
+	err := runServerAdd(serverAddOptions{
 		name: "only",
 		host: "only.example.com",
 		user: "deploy",
@@ -406,7 +406,7 @@ func TestServerRemoveLastClearsDefault(t *testing.T) {
 		t.Fatalf("runServerAdd failed: %v", err)
 	}
 
-	err = runServerRemove(&serverRemoveOptions{name: "only"})
+	err = runServerRemove(serverRemoveOptions{name: "only"})
 	if err != nil {
 		t.Fatalf("runServerRemove failed: %v", err)
 	}

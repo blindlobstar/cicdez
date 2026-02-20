@@ -29,7 +29,7 @@ type deployOptions struct {
 }
 
 func NewDeployCommand() *cobra.Command {
-	opts := &deployOptions{}
+	opts := deployOptions{}
 	cmd := &cobra.Command{
 		Use:   "deploy [stack]",
 		Short: "Deploy a stack to Docker Swarm",
@@ -54,7 +54,7 @@ func NewDeployCommand() *cobra.Command {
 	return cmd
 }
 
-func runDeploy(opts *deployOptions) error {
+func runDeploy(opts deployOptions) error {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get current directory: %w", err)

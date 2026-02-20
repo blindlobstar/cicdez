@@ -44,7 +44,7 @@ func NewRegistryCommandWithFactory(clientFactory RegistryClientFactory) *cobra.C
 		Short: "Manage Docker registry credentials",
 	}
 
-	addOpts := &registryAddOptions{clientFactory: clientFactory}
+	addOpts := registryAddOptions{clientFactory: clientFactory}
 	addCmd := &cobra.Command{
 		Use:   "add <server>",
 		Short: "Add or update a registry",
@@ -60,7 +60,7 @@ func NewRegistryCommandWithFactory(clientFactory RegistryClientFactory) *cobra.C
 	addCmd.MarkFlagRequired("username")
 	addCmd.MarkFlagRequired("password")
 
-	removeOpts := &registryRemoveOptions{}
+	removeOpts := registryRemoveOptions{}
 	removeCmd := &cobra.Command{
 		Use:     "remove <server>",
 		Aliases: []string{"rm", "delete"},
@@ -86,7 +86,7 @@ func NewRegistryCommandWithFactory(clientFactory RegistryClientFactory) *cobra.C
 	return cmd
 }
 
-func runRegistryAdd(opts *registryAddOptions) error {
+func runRegistryAdd(opts registryAddOptions) error {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get current directory: %w", err)
@@ -175,7 +175,7 @@ func runRegistryList() error {
 	return nil
 }
 
-func runRegistryRemove(opts *registryRemoveOptions) error {
+func runRegistryRemove(opts registryRemoveOptions) error {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get current directory: %w", err)

@@ -41,7 +41,7 @@ func setupTestEnv(t *testing.T) string {
 func TestSecretAdd(t *testing.T) {
 	setupTestEnv(t)
 
-	err := runSecretAdd(&secretAddOptions{name: "DB_PASSWORD", value: "secret123"})
+	err := runSecretAdd(secretAddOptions{name: "DB_PASSWORD", value: "secret123"})
 	if err != nil {
 		t.Fatalf("runSecretAdd failed: %v", err)
 	}
@@ -59,12 +59,12 @@ func TestSecretAdd(t *testing.T) {
 func TestSecretAddUpdate(t *testing.T) {
 	setupTestEnv(t)
 
-	err := runSecretAdd(&secretAddOptions{name: "API_KEY", value: "initial_value"})
+	err := runSecretAdd(secretAddOptions{name: "API_KEY", value: "initial_value"})
 	if err != nil {
 		t.Fatalf("runSecretAdd failed: %v", err)
 	}
 
-	err = runSecretAdd(&secretAddOptions{name: "API_KEY", value: "updated_value"})
+	err = runSecretAdd(secretAddOptions{name: "API_KEY", value: "updated_value"})
 	if err != nil {
 		t.Fatalf("runSecretAdd (update) failed: %v", err)
 	}
@@ -89,7 +89,7 @@ func TestSecretList(t *testing.T) {
 	}
 
 	for name, value := range secrets {
-		err := runSecretAdd(&secretAddOptions{name: name, value: value})
+		err := runSecretAdd(secretAddOptions{name: name, value: value})
 		if err != nil {
 			t.Fatalf("runSecretAdd failed for %s: %v", name, err)
 		}
@@ -113,12 +113,12 @@ func TestSecretListEmpty(t *testing.T) {
 func TestSecretRemove(t *testing.T) {
 	setupTestEnv(t)
 
-	err := runSecretAdd(&secretAddOptions{name: "TEMP_SECRET", value: "temp_value"})
+	err := runSecretAdd(secretAddOptions{name: "TEMP_SECRET", value: "temp_value"})
 	if err != nil {
 		t.Fatalf("runSecretAdd failed: %v", err)
 	}
 
-	err = runSecretRemove(&secretRemoveOptions{name: "TEMP_SECRET"})
+	err = runSecretRemove(secretRemoveOptions{name: "TEMP_SECRET"})
 	if err != nil {
 		t.Fatalf("runSecretRemove failed: %v", err)
 	}
@@ -136,7 +136,7 @@ func TestSecretRemove(t *testing.T) {
 func TestSecretRemoveNonExistent(t *testing.T) {
 	setupTestEnv(t)
 
-	err := runSecretRemove(&secretRemoveOptions{name: "NON_EXISTENT"})
+	err := runSecretRemove(secretRemoveOptions{name: "NON_EXISTENT"})
 	if err == nil {
 		t.Error("expected error when removing non-existent secret, got nil")
 	}

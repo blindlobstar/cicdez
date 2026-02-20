@@ -21,7 +21,7 @@ type buildOptions struct {
 }
 
 func NewBuildCommand() *cobra.Command {
-	opts := &buildOptions{}
+	opts := buildOptions{}
 	cmd := &cobra.Command{
 		Use:   "build [services...]",
 		Short: "Build images from compose file",
@@ -38,7 +38,7 @@ func NewBuildCommand() *cobra.Command {
 	return cmd
 }
 
-func runBuild(opts *buildOptions) error {
+func runBuild(opts buildOptions) error {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get current directory: %w", err)

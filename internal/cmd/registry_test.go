@@ -27,7 +27,7 @@ func mockClientFactory() (RegistryClient, error) {
 func TestRegistryAdd(t *testing.T) {
 	setupTestEnv(t)
 
-	opts := &registryAddOptions{
+	opts := registryAddOptions{
 		server:        "registry.example.com",
 		username:      "admin",
 		password:      "secret123",
@@ -79,7 +79,7 @@ func TestRegistryAddWithIdentityToken(t *testing.T) {
 		}, nil
 	}
 
-	opts := &registryAddOptions{
+	opts := registryAddOptions{
 		server:        "gcr.io",
 		username:      "user",
 		password:      "pass",
@@ -110,7 +110,7 @@ func TestRegistryAddWithIdentityToken(t *testing.T) {
 func TestRegistryAddUpdate(t *testing.T) {
 	setupTestEnv(t)
 
-	opts := &registryAddOptions{
+	opts := registryAddOptions{
 		server:        "myregistry.com",
 		username:      "olduser",
 		password:      "oldpass",
@@ -123,7 +123,7 @@ func TestRegistryAddUpdate(t *testing.T) {
 		t.Fatalf("runRegistryAdd failed: %v", err)
 	}
 
-	opts = &registryAddOptions{
+	opts = registryAddOptions{
 		server:        "myregistry.com",
 		username:      "newuser",
 		password:      "newpass",
@@ -164,7 +164,7 @@ func TestRegistryList(t *testing.T) {
 	}
 
 	for server, r := range registries {
-		opts := &registryAddOptions{
+		opts := registryAddOptions{
 			server:        server,
 			username:      r.username,
 			password:      r.password,
@@ -195,7 +195,7 @@ func TestRegistryListEmpty(t *testing.T) {
 func TestRegistryRemove(t *testing.T) {
 	setupTestEnv(t)
 
-	err := runRegistryAdd(&registryAddOptions{
+	err := runRegistryAdd(registryAddOptions{
 		server:        "temp-registry.com",
 		username:      "tempuser",
 		password:      "temppass",
@@ -206,7 +206,7 @@ func TestRegistryRemove(t *testing.T) {
 		t.Fatalf("runRegistryAdd failed: %v", err)
 	}
 
-	err = runRegistryRemove(&registryRemoveOptions{server: "temp-registry.com"})
+	err = runRegistryRemove(registryRemoveOptions{server: "temp-registry.com"})
 	if err != nil {
 		t.Fatalf("runRegistryRemove failed: %v", err)
 	}
@@ -224,7 +224,7 @@ func TestRegistryRemove(t *testing.T) {
 func TestRegistryRemoveNonExistent(t *testing.T) {
 	setupTestEnv(t)
 
-	err := runRegistryRemove(&registryRemoveOptions{server: "non-existent"})
+	err := runRegistryRemove(registryRemoveOptions{server: "non-existent"})
 	if err == nil {
 		t.Error("expected error when removing non-existent registry, got nil")
 	}
@@ -241,7 +241,7 @@ func TestRegistryLoginError(t *testing.T) {
 		}, nil
 	}
 
-	opts := &registryAddOptions{
+	opts := registryAddOptions{
 		server:        "private.registry.com",
 		username:      "user",
 		password:      "wrongpass",
