@@ -7,14 +7,13 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/spf13/cobra"
 	"github.com/blindlobstar/cicdez/internal/vault"
+	"github.com/spf13/cobra"
 )
 
 type serverAddOptions struct {
 	name    string
 	host    string
-	port    int
 	user    string
 	keyFile string
 }
