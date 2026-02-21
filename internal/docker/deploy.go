@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
+	"io"
 
 	"github.com/blindlobstar/cicdez/internal/vault"
 	"github.com/compose-spec/compose-go/v2/types"
@@ -33,6 +33,7 @@ type DeployOptions struct {
 	ResolveImage string
 	Quiet        bool
 	Registries   map[string]registry.AuthConfig
+	Out          io.Writer
 }
 
 func Deploy(ctx context.Context, dockerClient client.APIClient, project types.Project, opts DeployOptions) error {
@@ -88,7 +89,7 @@ func Deploy(ctx context.Context, dockerClient client.APIClient, project types.Pr
 		return err
 	}
 
-	_, err = deployServices(ctx, dockerClient, services, opts.Stack, opts.ResolveImage, opts.Registries, opts.Quiet)
+	_, err = deployServices(ctx, dockerClient, services, opts.Stack, opts.ResolveImage, opts.Registries, opts.Quiet, opts.Out)
 	if err != nil {
 		return err
 	}
@@ -225,7 +226,7 @@ func createConfigs(ctx context.Context, apiClient client.APIClient, configs []sw
 	return nil
 }
 
-func deployServices(ctx context.Context, apiClient client.APIClient, services map[string]swarm.ServiceSpec, stack string, resolveImage string, registries map[string]registry.AuthConfig, quiet bool) ([]string, error) {
+func deployServices(ctx context.Context, apiClient client.APIClient, services map[string]swarm.ServiceSpec, stack string, resolveImage string, registries map[string]registry.AuthConfig, quiet bool, out io.Writer) ([]string, error) {
 	res, err := apiClient.ServiceList(ctx, client.ServiceListOptions{Filters: getStackFilter(stack)})
 	if err != nil {
 		return nil, err
@@ -274,13 +275,13 @@ func deployServices(ctx context.Context, apiClient client.APIClient, services ma
 			}
 
 			if !quiet {
-				fmt.Fprintf(os.Stdout, "Updating service %s\n", name)
+				fmt.Fprintf(out, "Updating service %s\n", name)
 			}
 
 			serviceIDs = append(serviceIDs, svc.ID)
 		} else {
 			if !quiet {
-				fmt.Fprintf(os.Stdout, "Creating service %s\n", name)
+				fmt.Fprintf(out, "Creating service %s\n", name)
 			}
 
 			queryRegistry := resolveImage == ResolveImageAlways || resolveImage == ResolveImageChanged

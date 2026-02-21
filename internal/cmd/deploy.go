@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/blindlobstar/cicdez/internal/docker"
@@ -38,7 +39,7 @@ Stack name defaults to the project name from the compose file.`,
 			if len(args) > 0 {
 				opts.stack = args[0]
 			}
-			return runDeploy(cmd.Context(), opts)
+			return runDeploy(cmd.Context(), cmd.OutOrStdout(), opts)
 		},
 	}
 	cmd.Flags().StringArrayVarP(&opts.composeFiles, "file", "f", []string{"compose.yaml"}, "compose file path(s)")
@@ -52,7 +53,7 @@ Stack name defaults to the project name from the compose file.`,
 	return cmd
 }
 
-func runDeploy(ctx context.Context, opts deployOptions) error {
+func runDeploy(ctx context.Context, out io.Writer, opts deployOptions) error {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get current directory: %w", err)
@@ -91,6 +92,7 @@ func runDeploy(ctx context.Context, opts deployOptions) error {
 			NoCache:    opts.noCache,
 			Pull:       opts.pull,
 			Push:       true,
+			Out:        out,
 		}
 
 		if err := docker.Build(ctx, dockerClient, project, buildOpts); err != nil {
@@ -116,6 +118,7 @@ func runDeploy(ctx context.Context, opts deployOptions) error {
 		ResolveImage: opts.resolveImage,
 		Quiet:        opts.quiet,
 		Registries:   cfg.Registries,
+		Out:          out,
 	})
 	if err != nil {
 		return err

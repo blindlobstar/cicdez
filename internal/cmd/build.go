@@ -3,12 +3,13 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 
-	"github.com/moby/moby/client"
-	"github.com/spf13/cobra"
 	"github.com/blindlobstar/cicdez/internal/docker"
 	"github.com/blindlobstar/cicdez/internal/vault"
+	"github.com/moby/moby/client"
+	"github.com/spf13/cobra"
 )
 
 type buildOptions struct {
@@ -26,7 +27,7 @@ func NewBuildCommand() *cobra.Command {
 		Short: "Build images from compose file",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts.services = args
-			return runBuild(cmd.Context(), opts)
+			return runBuild(cmd.Context(), cmd.OutOrStdout(), opts)
 		},
 	}
 	cmd.Flags().StringVarP(&opts.composeFile, "file", "f", "compose.yaml", "compose file path")
@@ -36,7 +37,7 @@ func NewBuildCommand() *cobra.Command {
 	return cmd
 }
 
-func runBuild(ctx context.Context, opts buildOptions) error {
+func runBuild(ctx context.Context, out io.Writer, opts buildOptions) error {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get current directory: %w", err)
@@ -70,6 +71,7 @@ func runBuild(ctx context.Context, opts buildOptions) error {
 		NoCache:    opts.noCache,
 		Pull:       opts.pull,
 		Push:       opts.push,
+		Out:        out,
 	}
 
 	return docker.Build(ctx, dockerClient, project, buildOpts)

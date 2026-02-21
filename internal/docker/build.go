@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -27,6 +28,7 @@ type BuildOptions struct {
 	NoCache    bool
 	Pull       bool
 	Push       bool
+	Out        io.Writer
 }
 
 func Build(ctx context.Context, dockerClient client.APIClient, project types.Project, opt BuildOptions) error {
@@ -44,14 +46,14 @@ func Build(ctx context.Context, dockerClient client.APIClient, project types.Pro
 			imageName = project.Name + "_" + svc.Name
 		}
 
-		fmt.Printf("Building %s...\n", imageName)
+		fmt.Fprintf(opt.Out, "Building %s...\n", imageName)
 
 		if err := buildImage(ctx, dockerClient, imageName, svc.Build, svc.Platform, opt); err != nil {
 			return fmt.Errorf("failed to build %s: %w", svc.Name, err)
 		}
 
 		if opt.Push {
-			fmt.Printf("Pushing %s...\n", imageName)
+			fmt.Fprintf(opt.Out, "Pushing %s...\n", imageName)
 			if err := PushImage(ctx, dockerClient, imageName, opt.Registries); err != nil {
 				return fmt.Errorf("failed to push %s: %w", svc.Name, err)
 			}
