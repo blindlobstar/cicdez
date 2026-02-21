@@ -2,13 +2,14 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
 
 	"filippo.io/age"
-	"github.com/spf13/cobra"
 	"github.com/blindlobstar/cicdez/internal/vault"
+	"github.com/spf13/cobra"
 )
 
 type keyGenerateOptions struct {
@@ -27,7 +28,7 @@ func NewKeyCommand() *cobra.Command {
 		Use:   "generate",
 		Short: "Generate a new age encryption key",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runKeyGenerate(genOpts)
+			return runKeyGenerate(cmd.OutOrStdout(), genOpts)
 		},
 	}
 	genCmd.Flags().BoolVarP(&genOpts.force, "force", "f", false, "Overwrite existing key file")
@@ -37,7 +38,7 @@ func NewKeyCommand() *cobra.Command {
 	return cmd
 }
 
-func runKeyGenerate(opts keyGenerateOptions) error {
+func runKeyGenerate(out io.Writer, opts keyGenerateOptions) error {
 	if opts.outputPath == "" {
 		var err error
 		opts.outputPath, err = vault.GetKeyPath()
@@ -71,7 +72,7 @@ func runKeyGenerate(opts keyGenerateOptions) error {
 		return fmt.Errorf("failed to write key file: %w", err)
 	}
 
-	fmt.Printf("Key generated successfully at %s\n", opts.outputPath)
-	fmt.Printf("Public key: %s\n", identity.Recipient().String())
+	fmt.Fprintf(out, "Key generated successfully at %s\n", opts.outputPath)
+	fmt.Fprintf(out, "Public key: %s\n", identity.Recipient().String())
 	return nil
 }

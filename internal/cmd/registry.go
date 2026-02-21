@@ -3,13 +3,14 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"sort"
 
+	"github.com/blindlobstar/cicdez/internal/vault"
 	"github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
 	"github.com/spf13/cobra"
-	"github.com/blindlobstar/cicdez/internal/vault"
 )
 
 type RegistryClient interface {
@@ -50,7 +51,7 @@ func NewRegistryCommandWithFactory(clientFactory RegistryClientFactory) *cobra.C
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			addOpts.server = args[0]
-			return runRegistryAdd(cmd.Context(), addOpts)
+			return runRegistryAdd(cmd.Context(), cmd.OutOrStdout(), addOpts)
 		},
 	}
 	addCmd.Flags().StringVar(&addOpts.username, "username", "", "Registry username (required)")
@@ -66,7 +67,7 @@ func NewRegistryCommandWithFactory(clientFactory RegistryClientFactory) *cobra.C
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			removeOpts.server = args[0]
-			return runRegistryRemove(removeOpts)
+			return runRegistryRemove(cmd.OutOrStdout(), removeOpts)
 		},
 	}
 
@@ -76,7 +77,7 @@ func NewRegistryCommandWithFactory(clientFactory RegistryClientFactory) *cobra.C
 		Aliases: []string{"ls"},
 		Short:   "List all registries",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runRegistryList()
+			return runRegistryList(cmd.OutOrStdout())
 		},
 	})
 	cmd.AddCommand(removeCmd)
@@ -84,7 +85,7 @@ func NewRegistryCommandWithFactory(clientFactory RegistryClientFactory) *cobra.C
 	return cmd
 }
 
-func runRegistryAdd(ctx context.Context, opts registryAddOptions) error {
+func runRegistryAdd(ctx context.Context, out io.Writer, opts registryAddOptions) error {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get current directory: %w", err)
@@ -133,13 +134,13 @@ func runRegistryAdd(ctx context.Context, opts registryAddOptions) error {
 	}
 
 	if resp.Auth.Status != "" {
-		fmt.Println(resp.Auth.Status)
+		fmt.Fprintln(out, resp.Auth.Status)
 	}
 
 	return nil
 }
 
-func runRegistryList() error {
+func runRegistryList(out io.Writer) error {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get current directory: %w", err)
@@ -151,7 +152,7 @@ func runRegistryList() error {
 	}
 
 	if len(config.Registries) == 0 {
-		fmt.Println("No registries found")
+		fmt.Fprintln(out, "No registries found")
 		return nil
 	}
 
@@ -161,19 +162,19 @@ func runRegistryList() error {
 	}
 	sort.Strings(names)
 
-	fmt.Println("Registries:")
+	fmt.Fprintln(out, "Registries:")
 	for _, name := range names {
 		reg := config.Registries[name]
-		fmt.Printf("  %s:\n", name)
-		fmt.Printf("    URL: %s\n", reg.ServerAddress)
-		fmt.Printf("    Username: %s\n", reg.Username)
-		fmt.Printf("    Password: <configured>\n")
+		fmt.Fprintf(out, "  %s:\n", name)
+		fmt.Fprintf(out, "    URL: %s\n", reg.ServerAddress)
+		fmt.Fprintf(out, "    Username: %s\n", reg.Username)
+		fmt.Fprintln(out, "    Password: <configured>")
 	}
 
 	return nil
 }
 
-func runRegistryRemove(opts registryRemoveOptions) error {
+func runRegistryRemove(out io.Writer, opts registryRemoveOptions) error {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get current directory: %w", err)
@@ -194,6 +195,6 @@ func runRegistryRemove(opts registryRemoveOptions) error {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 
-	fmt.Printf("Registry '%s' removed\n", opts.server)
+	fmt.Fprintf(out, "Registry '%s' removed\n", opts.server)
 	return nil
 }

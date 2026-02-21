@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"sort"
@@ -39,7 +40,7 @@ func NewServerCommand() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			addOpts.name = args[0]
-			return runServerAdd(addOpts)
+			return runServerAdd(cmd.OutOrStdout(), addOpts)
 		},
 	}
 	addCmd.Flags().StringVarP(&addOpts.host, "host", "H", "", "Server hostname or IP address, optionally with port (host:port)")
@@ -55,7 +56,7 @@ func NewServerCommand() *cobra.Command {
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			removeOpts.name = args[0]
-			return runServerRemove(removeOpts)
+			return runServerRemove(cmd.OutOrStdout(), removeOpts)
 		},
 	}
 
@@ -66,7 +67,7 @@ func NewServerCommand() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			setDefaultOpts.name = args[0]
-			return runServerSetDefault(setDefaultOpts)
+			return runServerSetDefault(cmd.OutOrStdout(), setDefaultOpts)
 		},
 	}
 
@@ -76,7 +77,7 @@ func NewServerCommand() *cobra.Command {
 		Aliases: []string{"ls"},
 		Short:   "List all servers",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runServerList()
+			return runServerList(cmd.OutOrStdout())
 		},
 	})
 	cmd.AddCommand(removeCmd)
@@ -85,7 +86,7 @@ func NewServerCommand() *cobra.Command {
 	return cmd
 }
 
-func runServerAdd(opts serverAddOptions) error {
+func runServerAdd(out io.Writer, opts serverAddOptions) error {
 	host := opts.host
 	port := 22
 
@@ -126,11 +127,11 @@ func runServerAdd(opts serverAddOptions) error {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 
-	fmt.Printf("Server '%s' added\n", opts.name)
+	fmt.Fprintf(out, "Server '%s' added\n", opts.name)
 	return nil
 }
 
-func runServerList() error {
+func runServerList(out io.Writer) error {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get current directory: %w", err)
@@ -142,7 +143,7 @@ func runServerList() error {
 	}
 
 	if len(config.Servers) == 0 {
-		fmt.Println("No servers found")
+		fmt.Fprintln(out, "No servers found")
 		return nil
 	}
 
@@ -152,29 +153,29 @@ func runServerList() error {
 	}
 	sort.Strings(names)
 
-	fmt.Println("Servers:")
+	fmt.Fprintln(out, "Servers:")
 	for _, name := range names {
 		server := config.Servers[name]
 		defaultMark := ""
 		if name == config.DefaultServer {
 			defaultMark = " *"
 		}
-		fmt.Printf("  %s%s:\n", name, defaultMark)
+		fmt.Fprintf(out, "  %s%s:\n", name, defaultMark)
 		port := server.Port
 		if port == 0 {
 			port = 22
 		}
-		fmt.Printf("    Host: %s:%d\n", server.Host, port)
-		fmt.Printf("    User: %s\n", server.User)
+		fmt.Fprintf(out, "    Host: %s:%d\n", server.Host, port)
+		fmt.Fprintf(out, "    User: %s\n", server.User)
 		if server.Key != "" {
-			fmt.Printf("    Key: <configured>\n")
+			fmt.Fprintln(out, "    Key: <configured>")
 		}
 	}
 
 	return nil
 }
 
-func runServerRemove(opts serverRemoveOptions) error {
+func runServerRemove(out io.Writer, opts serverRemoveOptions) error {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get current directory: %w", err)
@@ -196,14 +197,14 @@ func runServerRemove(opts serverRemoveOptions) error {
 	}
 
 	if newDefault != "" {
-		fmt.Printf("Server '%s' removed. New default: %s\n", opts.name, newDefault)
+		fmt.Fprintf(out, "Server '%s' removed. New default: %s\n", opts.name, newDefault)
 	} else {
-		fmt.Printf("Server '%s' removed\n", opts.name)
+		fmt.Fprintf(out, "Server '%s' removed\n", opts.name)
 	}
 	return nil
 }
 
-func runServerSetDefault(opts serverSetDefaultOptions) error {
+func runServerSetDefault(out io.Writer, opts serverSetDefaultOptions) error {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get current directory: %w", err)
@@ -222,6 +223,6 @@ func runServerSetDefault(opts serverSetDefaultOptions) error {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 
-	fmt.Printf("Server '%s' set as default\n", opts.name)
+	fmt.Fprintf(out, "Server '%s' set as default\n", opts.name)
 	return nil
 }

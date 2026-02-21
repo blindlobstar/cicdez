@@ -1,8 +1,10 @@
 package cmd
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/blindlobstar/cicdez/internal/vault"
@@ -11,15 +13,14 @@ import (
 func TestServerAdd(t *testing.T) {
 	setupTestEnv(t)
 
-	opts := serverAddOptions{
-		name: "production",
-		host: "192.168.1.100",
-		user: "deploy",
-	}
+	cmd := NewServerCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{"add", "production", "--host", "192.168.1.100", "--user", "deploy"})
 
-	err := runServerAdd(opts)
+	err := cmd.Execute()
 	if err != nil {
-		t.Fatalf("runServerAdd failed: %v", err)
+		t.Fatalf("server add failed: %v", err)
 	}
 
 	config, err := vault.LoadConfig(".")
@@ -43,20 +44,24 @@ func TestServerAdd(t *testing.T) {
 	if server.User != "deploy" {
 		t.Errorf("expected user 'deploy', got '%s'", server.User)
 	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Server 'production' added") {
+		t.Errorf("expected output to contain success message, got: %s", output)
+	}
 }
 
 func TestServerAddDefaultUser(t *testing.T) {
 	setupTestEnv(t)
 
-	opts := serverAddOptions{
-		name: "prod",
-		host: "192.168.1.10",
-		user: "root",
-	}
+	cmd := NewServerCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{"add", "prod", "--host", "192.168.1.10"})
 
-	err := runServerAdd(opts)
+	err := cmd.Execute()
 	if err != nil {
-		t.Fatalf("runServerAdd failed: %v", err)
+		t.Fatalf("server add failed: %v", err)
 	}
 
 	config, err := vault.LoadConfig(".")
@@ -77,15 +82,14 @@ func TestServerAddDefaultUser(t *testing.T) {
 func TestServerAddWithPort(t *testing.T) {
 	setupTestEnv(t)
 
-	opts := serverAddOptions{
-		name: "staging",
-		host: "192.168.1.10:2222",
-		user: "deploy",
-	}
+	cmd := NewServerCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{"add", "staging", "--host", "192.168.1.10:2222", "--user", "deploy"})
 
-	err := runServerAdd(opts)
+	err := cmd.Execute()
 	if err != nil {
-		t.Fatalf("runServerAdd failed: %v", err)
+		t.Fatalf("server add failed: %v", err)
 	}
 
 	config, err := vault.LoadConfig(".")
@@ -116,16 +120,14 @@ func TestServerAddWithKeyFile(t *testing.T) {
 		t.Fatalf("failed to write key file: %v", err)
 	}
 
-	opts := serverAddOptions{
-		name:    "staging",
-		host:    "10.0.0.5",
-		user:    "ubuntu",
-		keyFile: keyFile,
-	}
+	cmd := NewServerCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{"add", "staging", "--host", "10.0.0.5", "--user", "ubuntu", "--key-file", keyFile})
 
-	err := runServerAdd(opts)
+	err := cmd.Execute()
 	if err != nil {
-		t.Fatalf("runServerAdd failed: %v", err)
+		t.Fatalf("server add failed: %v", err)
 	}
 
 	config, err := vault.LoadConfig(".")
@@ -146,15 +148,12 @@ func TestServerAddWithKeyFile(t *testing.T) {
 func TestServerAddUpdate(t *testing.T) {
 	setupTestEnv(t)
 
-	opts := serverAddOptions{
-		name: "myserver",
-		host: "old-host.example.com",
-		user: "olduser",
-	}
-
-	err := runServerAdd(opts)
+	cmd := NewServerCommand()
+	cmd.SetOut(new(bytes.Buffer))
+	cmd.SetArgs([]string{"add", "myserver", "--host", "old-host.example.com", "--user", "olduser"})
+	err := cmd.Execute()
 	if err != nil {
-		t.Fatalf("runServerAdd failed: %v", err)
+		t.Fatalf("server add failed: %v", err)
 	}
 
 	keyContent := "new_key"
@@ -163,16 +162,12 @@ func TestServerAddUpdate(t *testing.T) {
 		t.Fatalf("failed to write key file: %v", err)
 	}
 
-	opts = serverAddOptions{
-		name:    "myserver",
-		host:    "new-host.example.com",
-		user:    "newuser",
-		keyFile: keyFile,
-	}
-
-	err = runServerAdd(opts)
+	cmd = NewServerCommand()
+	cmd.SetOut(new(bytes.Buffer))
+	cmd.SetArgs([]string{"add", "myserver", "--host", "new-host.example.com", "--user", "newuser", "--key-file", keyFile})
+	err = cmd.Execute()
 	if err != nil {
-		t.Fatalf("runServerAdd (update) failed: %v", err)
+		t.Fatalf("server add (update) failed: %v", err)
 	}
 
 	config, err := vault.LoadConfig(".")
@@ -207,47 +202,74 @@ func TestServerList(t *testing.T) {
 	}
 
 	for name, s := range servers {
-		opts := serverAddOptions{
-			name: name,
-			host: s.host,
-			user: s.user,
-		}
-		err := runServerAdd(opts)
+		cmd := NewServerCommand()
+		cmd.SetOut(new(bytes.Buffer))
+		cmd.SetArgs([]string{"add", name, "--host", s.host, "--user", s.user})
+		err := cmd.Execute()
 		if err != nil {
-			t.Fatalf("runServerAdd failed for %s: %v", name, err)
+			t.Fatalf("server add failed for %s: %v", name, err)
 		}
 	}
 
-	err := runServerList()
+	cmd := NewServerCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{"list"})
+
+	err := cmd.Execute()
 	if err != nil {
-		t.Fatalf("runServerList failed: %v", err)
+		t.Fatalf("server list failed: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Servers:") {
+		t.Errorf("expected output to contain 'Servers:', got: %s", output)
+	}
+	for name := range servers {
+		if !strings.Contains(output, name) {
+			t.Errorf("expected output to contain '%s', got: %s", name, output)
+		}
 	}
 }
 
 func TestServerListEmpty(t *testing.T) {
 	setupTestEnv(t)
 
-	err := runServerList()
+	cmd := NewServerCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{"list"})
+
+	err := cmd.Execute()
 	if err != nil {
-		t.Fatalf("runServerList failed on empty servers: %v", err)
+		t.Fatalf("server list failed on empty servers: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "No servers found") {
+		t.Errorf("expected output to contain 'No servers found', got: %s", output)
 	}
 }
 
 func TestServerRemove(t *testing.T) {
 	setupTestEnv(t)
 
-	err := runServerAdd(serverAddOptions{
-		name: "temp-server",
-		host: "temp.example.com",
-		user: "temp",
-	})
+	cmd := NewServerCommand()
+	cmd.SetOut(new(bytes.Buffer))
+	cmd.SetArgs([]string{"add", "temp-server", "--host", "temp.example.com", "--user", "temp"})
+	err := cmd.Execute()
 	if err != nil {
-		t.Fatalf("runServerAdd failed: %v", err)
+		t.Fatalf("server add failed: %v", err)
 	}
 
-	err = runServerRemove(serverRemoveOptions{name: "temp-server"})
+	cmd = NewServerCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{"remove", "temp-server"})
+
+	err = cmd.Execute()
 	if err != nil {
-		t.Fatalf("runServerRemove failed: %v", err)
+		t.Fatalf("server remove failed: %v", err)
 	}
 
 	config, err := vault.LoadConfig(".")
@@ -263,7 +285,13 @@ func TestServerRemove(t *testing.T) {
 func TestServerRemoveNonExistent(t *testing.T) {
 	setupTestEnv(t)
 
-	err := runServerRemove(serverRemoveOptions{name: "non-existent"})
+	cmd := NewServerCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"remove", "non-existent"})
+
+	err := cmd.Execute()
 	if err == nil {
 		t.Error("expected error when removing non-existent server, got nil")
 	}
@@ -272,13 +300,12 @@ func TestServerRemoveNonExistent(t *testing.T) {
 func TestServerAddFirstIsDefault(t *testing.T) {
 	setupTestEnv(t)
 
-	err := runServerAdd(serverAddOptions{
-		name: "first",
-		host: "first.example.com",
-		user: "deploy",
-	})
+	cmd := NewServerCommand()
+	cmd.SetOut(new(bytes.Buffer))
+	cmd.SetArgs([]string{"add", "first", "--host", "first.example.com", "--user", "deploy"})
+	err := cmd.Execute()
 	if err != nil {
-		t.Fatalf("runServerAdd failed: %v", err)
+		t.Fatalf("server add failed: %v", err)
 	}
 
 	config, err := vault.LoadConfig(".")
@@ -290,13 +317,12 @@ func TestServerAddFirstIsDefault(t *testing.T) {
 		t.Errorf("expected default server 'first', got '%s'", config.DefaultServer)
 	}
 
-	err = runServerAdd(serverAddOptions{
-		name: "second",
-		host: "second.example.com",
-		user: "deploy",
-	})
+	cmd = NewServerCommand()
+	cmd.SetOut(new(bytes.Buffer))
+	cmd.SetArgs([]string{"add", "second", "--host", "second.example.com", "--user", "deploy"})
+	err = cmd.Execute()
 	if err != nil {
-		t.Fatalf("runServerAdd failed: %v", err)
+		t.Fatalf("server add failed: %v", err)
 	}
 
 	config, err = vault.LoadConfig(".")
@@ -313,13 +339,12 @@ func TestServerSetDefault(t *testing.T) {
 	setupTestEnv(t)
 
 	for _, name := range []string{"server1", "server2"} {
-		err := runServerAdd(serverAddOptions{
-			name: name,
-			host: name + ".example.com",
-			user: "deploy",
-		})
+		cmd := NewServerCommand()
+		cmd.SetOut(new(bytes.Buffer))
+		cmd.SetArgs([]string{"add", name, "--host", name + ".example.com", "--user", "deploy"})
+		err := cmd.Execute()
 		if err != nil {
-			t.Fatalf("runServerAdd failed: %v", err)
+			t.Fatalf("server add failed: %v", err)
 		}
 	}
 
@@ -332,9 +357,14 @@ func TestServerSetDefault(t *testing.T) {
 		t.Errorf("expected default server 'server1', got '%s'", config.DefaultServer)
 	}
 
-	err = runServerSetDefault(serverSetDefaultOptions{name: "server2"})
+	cmd := NewServerCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{"set-default", "server2"})
+
+	err = cmd.Execute()
 	if err != nil {
-		t.Fatalf("runServerSetDefault failed: %v", err)
+		t.Fatalf("server set-default failed: %v", err)
 	}
 
 	config, err = vault.LoadConfig(".")
@@ -345,12 +375,23 @@ func TestServerSetDefault(t *testing.T) {
 	if config.DefaultServer != "server2" {
 		t.Errorf("expected default server 'server2', got '%s'", config.DefaultServer)
 	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Server 'server2' set as default") {
+		t.Errorf("expected output to contain success message, got: %s", output)
+	}
 }
 
 func TestServerSetDefaultNonExistent(t *testing.T) {
 	setupTestEnv(t)
 
-	err := runServerSetDefault(serverSetDefaultOptions{name: "non-existent"})
+	cmd := NewServerCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"set-default", "non-existent"})
+
+	err := cmd.Execute()
 	if err == nil {
 		t.Error("expected error when setting non-existent server as default, got nil")
 	}
@@ -360,13 +401,12 @@ func TestServerRemoveReassignsDefault(t *testing.T) {
 	setupTestEnv(t)
 
 	for _, name := range []string{"primary", "secondary"} {
-		err := runServerAdd(serverAddOptions{
-			name: name,
-			host: name + ".example.com",
-			user: "deploy",
-		})
+		cmd := NewServerCommand()
+		cmd.SetOut(new(bytes.Buffer))
+		cmd.SetArgs([]string{"add", name, "--host", name + ".example.com", "--user", "deploy"})
+		err := cmd.Execute()
 		if err != nil {
-			t.Fatalf("runServerAdd failed: %v", err)
+			t.Fatalf("server add failed: %v", err)
 		}
 	}
 
@@ -379,9 +419,13 @@ func TestServerRemoveReassignsDefault(t *testing.T) {
 		t.Errorf("expected default server 'primary', got '%s'", config.DefaultServer)
 	}
 
-	err = runServerRemove(serverRemoveOptions{name: "primary"})
+	cmd := NewServerCommand()
+	cmd.SetOut(new(bytes.Buffer))
+	cmd.SetArgs([]string{"remove", "primary"})
+
+	err = cmd.Execute()
 	if err != nil {
-		t.Fatalf("runServerRemove failed: %v", err)
+		t.Fatalf("server remove failed: %v", err)
 	}
 
 	config, err = vault.LoadConfig(".")
@@ -397,18 +441,21 @@ func TestServerRemoveReassignsDefault(t *testing.T) {
 func TestServerRemoveLastClearsDefault(t *testing.T) {
 	setupTestEnv(t)
 
-	err := runServerAdd(serverAddOptions{
-		name: "only",
-		host: "only.example.com",
-		user: "deploy",
-	})
+	cmd := NewServerCommand()
+	cmd.SetOut(new(bytes.Buffer))
+	cmd.SetArgs([]string{"add", "only", "--host", "only.example.com", "--user", "deploy"})
+	err := cmd.Execute()
 	if err != nil {
-		t.Fatalf("runServerAdd failed: %v", err)
+		t.Fatalf("server add failed: %v", err)
 	}
 
-	err = runServerRemove(serverRemoveOptions{name: "only"})
+	cmd = NewServerCommand()
+	cmd.SetOut(new(bytes.Buffer))
+	cmd.SetArgs([]string{"remove", "only"})
+
+	err = cmd.Execute()
 	if err != nil {
-		t.Fatalf("runServerRemove failed: %v", err)
+		t.Fatalf("server remove failed: %v", err)
 	}
 
 	config, err := vault.LoadConfig(".")
