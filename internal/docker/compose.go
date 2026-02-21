@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/blindlobstar/cicdez/internal/vault"
 	"github.com/compose-spec/compose-go/v2/cli"
 	"github.com/compose-spec/compose-go/v2/types"
 	"github.com/moby/moby/api/types/container"
@@ -833,6 +834,11 @@ func AddStackLabel(stack string, labels types.Labels) map[string]string {
 	return result
 }
 
+func hashedName(name string, content []byte) string {
+	hash := sha256.Sum256(content)
+	return fmt.Sprintf("%s_%s", name, hex.EncodeToString(hash[:])[:8])
+}
+
 func ProcessLocalConfigs(project *types.Project, cwd string) error {
 	if project.Configs == nil {
 		project.Configs = make(types.Configs)
@@ -850,11 +856,7 @@ func ProcessLocalConfigs(project *types.Project, cwd string) error {
 				return fmt.Errorf("failed to read local config file %s for service %s: %w", localConfig.Source, svc.Name, err)
 			}
 
-			hash := sha256.Sum256(content)
-			hashStr := hex.EncodeToString(hash[:])[:8]
-
-			configName := fmt.Sprintf("%s_%s", name, hashStr)
-
+			configName := hashedName(name, content)
 			project.Configs[configName] = types.ConfigObjConfig{
 				Content: string(content),
 			}
@@ -862,6 +864,37 @@ func ProcessLocalConfigs(project *types.Project, cwd string) error {
 			svc.Configs = append(svc.Configs, types.ServiceConfigObjConfig{
 				Source: configName,
 				Target: localConfig.Target,
+			})
+		}
+		project.Services[svcName] = svc
+	}
+
+	return nil
+}
+
+func ProcessSensitiveSecrets(project *types.Project, allSecrets vault.Secrets) error {
+	if project.Secrets == nil {
+		project.Secrets = make(types.Secrets)
+	}
+
+	for svcName, svc := range project.Services {
+		for name, sensitive := range svc.Sensitive {
+			content, err := vault.FormatSecretsForSensitive(allSecrets, sensitive.Secrets, sensitive.Format)
+			if err != nil {
+				return fmt.Errorf("failed to format sensitive secrets for service %s target %s: %w", svc.Name, sensitive.Target, err)
+			}
+
+			secretName := hashedName(name, content)
+			project.Secrets[secretName] = types.SecretConfig{
+				Content: string(content),
+			}
+
+			svc.Secrets = append(svc.Secrets, types.ServiceSecretConfig{
+				Source: secretName,
+				Target: sensitive.Target,
+				UID:    sensitive.UID,
+				GID:    sensitive.GID,
+				Mode:   sensitive.Mode,
 			})
 		}
 		project.Services[svcName] = svc
