@@ -17,7 +17,6 @@ type buildOptions struct {
 	noCache     bool
 	pull        bool
 	push        bool
-	ctx         context.Context
 }
 
 func NewBuildCommand() *cobra.Command {
@@ -27,8 +26,7 @@ func NewBuildCommand() *cobra.Command {
 		Short: "Build images from compose file",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts.services = args
-			opts.ctx = cmd.Context()
-			return runBuild(opts)
+			return runBuild(cmd.Context(), opts)
 		},
 	}
 	cmd.Flags().StringVarP(&opts.composeFile, "file", "f", "compose.yaml", "Compose file path")
@@ -38,13 +36,13 @@ func NewBuildCommand() *cobra.Command {
 	return cmd
 }
 
-func runBuild(opts buildOptions) error {
+func runBuild(ctx context.Context, opts buildOptions) error {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get current directory: %w", err)
 	}
 
-	project, err := docker.LoadCompose(opts.ctx, nil, opts.composeFile)
+	project, err := docker.LoadCompose(ctx, nil, opts.composeFile)
 	if err != nil {
 		return fmt.Errorf("failed to load compose file: %w", err)
 	}
@@ -74,5 +72,5 @@ func runBuild(opts buildOptions) error {
 		Push:       opts.push,
 	}
 
-	return docker.Build(opts.ctx, dockerClient, project, buildOpts)
+	return docker.Build(ctx, dockerClient, project, buildOpts)
 }
