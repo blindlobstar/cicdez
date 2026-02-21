@@ -35,7 +35,7 @@ func NewServerCommand() *cobra.Command {
 
 	addOpts := serverAddOptions{}
 	addCmd := &cobra.Command{
-		Use:   "add <name>",
+		Use:   "add NAME",
 		Short: "Add or update a server",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -43,14 +43,14 @@ func NewServerCommand() *cobra.Command {
 			return runServerAdd(cmd.OutOrStdout(), addOpts)
 		},
 	}
-	addCmd.Flags().StringVarP(&addOpts.host, "host", "H", "", "Server hostname or IP address, optionally with port (host:port)")
-	addCmd.Flags().StringVarP(&addOpts.user, "user", "u", "root", "SSH user")
-	addCmd.Flags().StringVarP(&addOpts.keyFile, "key-file", "i", "", "Path to SSH private key file")
+	addCmd.Flags().StringVarP(&addOpts.host, "host", "H", "", "hostname or IP with optional port (HOST:PORT)")
+	addCmd.Flags().StringVarP(&addOpts.user, "user", "u", "root", "ssh user")
+	addCmd.Flags().StringVarP(&addOpts.keyFile, "key-file", "i", "", "path to ssh private key file")
 	addCmd.MarkFlagRequired("host")
 
 	removeOpts := serverRemoveOptions{}
 	removeCmd := &cobra.Command{
-		Use:     "remove <name>",
+		Use:     "remove NAME",
 		Aliases: []string{"rm", "delete"},
 		Short:   "Remove a server",
 		Args:    cobra.ExactArgs(1),
@@ -62,8 +62,8 @@ func NewServerCommand() *cobra.Command {
 
 	setDefaultOpts := serverSetDefaultOptions{}
 	setDefaultCmd := &cobra.Command{
-		Use:   "set-default <name>",
-		Short: "Set server as default",
+		Use:   "set-default NAME",
+		Short: "Set default server",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			setDefaultOpts.name = args[0]
@@ -75,7 +75,7 @@ func NewServerCommand() *cobra.Command {
 	cmd.AddCommand(&cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
-		Short:   "List all servers",
+		Short:   "List servers",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runServerList(cmd.OutOrStdout())
 		},

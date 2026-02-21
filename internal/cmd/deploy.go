@@ -26,8 +26,13 @@ type deployOptions struct {
 func NewDeployCommand() *cobra.Command {
 	opts := deployOptions{}
 	cmd := &cobra.Command{
-		Use:   "deploy [stack]",
-		Short: "Deploy a stack to Docker Swarm",
+		Use:   "deploy [STACK]",
+		Short: "Deploy stack to Docker Swarm",
+		Long: `Build images, push to registry, and deploy stack to Docker Swarm via SSH.
+
+Images are built and pushed automatically unless --no-build is specified.
+Secrets are decrypted and injected during deployment.
+Stack name defaults to the project name from the compose file.`,
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) > 0 {
@@ -36,14 +41,14 @@ func NewDeployCommand() *cobra.Command {
 			return runDeploy(cmd.Context(), opts)
 		},
 	}
-	cmd.Flags().StringArrayVarP(&opts.composeFiles, "file", "f", []string{"compose.yaml"}, "Compose file path(s)")
-	cmd.Flags().BoolVar(&opts.prune, "prune", false, "Prune services that are no longer referenced")
-	cmd.Flags().StringVar(&opts.resolveImage, "resolve-image", docker.ResolveImageAlways, "Query the registry to resolve image digest and supported platforms (\"always\", \"changed\", \"never\")")
-	cmd.Flags().BoolVarP(&opts.quiet, "quiet", "q", false, "Suppress progress output")
-	cmd.Flags().BoolVar(&opts.noBuild, "no-build", false, "Skip building images before deploy")
-	cmd.Flags().BoolVar(&opts.noCache, "no-cache", false, "Do not use cache when building")
-	cmd.Flags().BoolVar(&opts.pull, "pull", false, "Always pull newer versions of base images")
-	cmd.Flags().StringVar(&opts.server, "server", "", "Server to deploy to (uses default if not specified)")
+	cmd.Flags().StringArrayVarP(&opts.composeFiles, "file", "f", []string{"compose.yaml"}, "compose file path(s)")
+	cmd.Flags().BoolVar(&opts.prune, "prune", false, "prune services no longer referenced")
+	cmd.Flags().StringVar(&opts.resolveImage, "resolve-image", docker.ResolveImageAlways, "resolve image digests: always, changed, never")
+	cmd.Flags().BoolVarP(&opts.quiet, "quiet", "q", false, "suppress progress output")
+	cmd.Flags().BoolVar(&opts.noBuild, "no-build", false, "skip building images before deploy")
+	cmd.Flags().BoolVar(&opts.noCache, "no-cache", false, "do not use cache when building")
+	cmd.Flags().BoolVar(&opts.pull, "pull", false, "pull newer versions of base images")
+	cmd.Flags().StringVar(&opts.server, "server", "", "server to deploy to")
 	return cmd
 }
 
