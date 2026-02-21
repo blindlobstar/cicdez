@@ -7,11 +7,11 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/blindlobstar/cicdez/internal/docker"
+	"github.com/blindlobstar/cicdez/internal/vault"
 	"github.com/compose-spec/compose-go/v2/types"
 	"github.com/moby/moby/client"
 	"github.com/spf13/cobra"
-	"github.com/blindlobstar/cicdez/internal/docker"
-	"github.com/blindlobstar/cicdez/internal/vault"
 )
 
 type deployOptions struct {
@@ -19,7 +19,6 @@ type deployOptions struct {
 	stack        string
 	prune        bool
 	resolveImage string
-	detach       bool
 	quiet        bool
 	noBuild      bool
 	noCache      bool
@@ -45,7 +44,6 @@ func NewDeployCommand() *cobra.Command {
 	cmd.Flags().StringArrayVarP(&opts.composeFiles, "file", "f", []string{"compose.yaml"}, "Compose file path(s)")
 	cmd.Flags().BoolVar(&opts.prune, "prune", false, "Prune services that are no longer referenced")
 	cmd.Flags().StringVar(&opts.resolveImage, "resolve-image", docker.ResolveImageAlways, "Query the registry to resolve image digest and supported platforms (\"always\", \"changed\", \"never\")")
-	cmd.Flags().BoolVar(&opts.detach, "detach", false, "Exit immediately instead of waiting for services to converge")
 	cmd.Flags().BoolVarP(&opts.quiet, "quiet", "q", false, "Suppress progress output")
 	cmd.Flags().BoolVar(&opts.noBuild, "no-build", false, "Skip building images before deploy")
 	cmd.Flags().BoolVar(&opts.noCache, "no-cache", false, "Do not use cache when building")
@@ -121,7 +119,6 @@ func runDeploy(opts deployOptions) error {
 		Stack:        opts.stack,
 		Prune:        opts.prune,
 		ResolveImage: opts.resolveImage,
-		Detach:       opts.detach,
 		Quiet:        opts.quiet,
 		Registries:   cfg.Registries,
 	})

@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"time"
 
 	"github.com/compose-spec/compose-go/v2/types"
 	"github.com/containerd/errdefs"
@@ -29,7 +28,6 @@ type DeployOptions struct {
 	Stack        string
 	Prune        bool
 	ResolveImage string
-	Detach       bool
 	Quiet        bool
 	Registries   map[string]registry.AuthConfig
 }
@@ -79,16 +77,12 @@ func Deploy(ctx context.Context, dockerClient client.APIClient, project types.Pr
 		return err
 	}
 
-	serviceIDs, err := deployServices(ctx, dockerClient, services, opts.Stack, opts.ResolveImage, opts.Registries, opts.Quiet)
+	_, err = deployServices(ctx, dockerClient, services, opts.Stack, opts.ResolveImage, opts.Registries, opts.Quiet)
 	if err != nil {
 		return err
 	}
 
-	if opts.Detach {
-		return nil
-	}
-
-	return waitOnServices(ctx, dockerClient, serviceIDs, opts.Quiet)
+	return nil
 }
 
 func checkDaemonIsSwarmManager(ctx context.Context, dockerClient client.APIClient) error {
@@ -318,42 +312,6 @@ func getEncodedAuth(image string, registries map[string]registry.AuthConfig) str
 	}
 
 	return base64.URLEncoding.EncodeToString(authBytes)
-}
-
-func waitOnServices(ctx context.Context, dockerClient client.APIClient, serviceIDs []string, quiet bool) error {
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-
-	for _, serviceID := range serviceIDs {
-		if !quiet {
-			fmt.Fprintf(os.Stdout, "Waiting for service %s to converge...\n", serviceID)
-		}
-
-		for {
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-ticker.C:
-				res, err := dockerClient.ServiceInspect(ctx, serviceID, client.ServiceInspectOptions{})
-				if err != nil {
-					return fmt.Errorf("failed to inspect service %s: %w", serviceID, err)
-				}
-
-				if res.Service.ServiceStatus != nil {
-					running := res.Service.ServiceStatus.RunningTasks
-					desired := res.Service.ServiceStatus.DesiredTasks
-					if running >= desired && desired > 0 {
-						if !quiet {
-							fmt.Fprintf(os.Stdout, "Service %s converged (%d/%d tasks running)\n", serviceID, running, desired)
-						}
-						break
-					}
-				}
-			}
-		}
-	}
-
-	return nil
 }
 
 func HasBuildConfig(project types.Project) bool {
