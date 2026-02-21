@@ -22,17 +22,17 @@ type buildOptions struct {
 func NewBuildCommand() *cobra.Command {
 	opts := buildOptions{}
 	cmd := &cobra.Command{
-		Use:   "build [services...]",
+		Use:   "build [SERVICE...]",
 		Short: "Build images from compose file",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts.services = args
 			return runBuild(cmd.Context(), opts)
 		},
 	}
-	cmd.Flags().StringVarP(&opts.composeFile, "file", "f", "compose.yaml", "Compose file path")
-	cmd.Flags().BoolVar(&opts.noCache, "no-cache", false, "Do not use cache when building")
-	cmd.Flags().BoolVar(&opts.pull, "pull", false, "Always pull newer versions of base images")
-	cmd.Flags().BoolVar(&opts.push, "push", false, "Push images after build")
+	cmd.Flags().StringVarP(&opts.composeFile, "file", "f", "compose.yaml", "compose file path")
+	cmd.Flags().BoolVar(&opts.noCache, "no-cache", false, "do not use cache when building")
+	cmd.Flags().BoolVar(&opts.pull, "pull", false, "pull newer versions of base images")
+	cmd.Flags().BoolVar(&opts.push, "push", false, "push images after build")
 	return cmd
 }
 

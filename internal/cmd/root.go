@@ -7,12 +7,9 @@ import (
 func NewRootCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "cicdez",
-		Short: "Easy deployment and continuous delivery tool using Docker Swarm, SOPS, and age encryption",
-		Long: `cicdez simplifies deployment management by:
-- Managing secrets with age encryption
-- Extending Docker Compose with git context and custom features
-- Deploying to Docker Swarm with version control
-- Tracking configuration changes via git`,
+		Short: "Manage deployments, configuration, and secrets",
+		Long: `Build images, manage encrypted secrets, and deploy to Docker Swarm.
+Secrets and credentials are encrypted with age and stored locally.`,
 	}
 	cmd.AddCommand(NewKeyCommand())
 	cmd.AddCommand(NewSecretCommand())

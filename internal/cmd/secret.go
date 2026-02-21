@@ -29,7 +29,7 @@ func NewSecretCommand() *cobra.Command {
 
 	addOpts := secretAddOptions{}
 	addCmd := &cobra.Command{
-		Use:   "add <name> <value>",
+		Use:   "add NAME VALUE",
 		Short: "Add or update a secret",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -41,7 +41,7 @@ func NewSecretCommand() *cobra.Command {
 
 	removeOpts := secretRemoveOptions{}
 	removeCmd := &cobra.Command{
-		Use:     "remove <name>",
+		Use:     "remove NAME",
 		Aliases: []string{"rm", "delete"},
 		Short:   "Remove a secret",
 		Args:    cobra.ExactArgs(1),
@@ -55,14 +55,19 @@ func NewSecretCommand() *cobra.Command {
 	cmd.AddCommand(&cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
-		Short:   "List all secret names",
+		Short:   "List secret names",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runSecretList(cmd.OutOrStdout())
 		},
 	})
 	cmd.AddCommand(&cobra.Command{
 		Use:   "edit",
-		Short: "Edit all secrets using $EDITOR",
+		Short: "Edit secrets using $EDITOR",
+		Long: `Decrypt secrets, open in editor, and re-encrypt after saving.
+
+Secrets are written to a temporary YAML file and opened in $EDITOR.
+Falls back to vim if $EDITOR is not set.
+The temporary file is deleted after the editor exits.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runSecretEdit(cmd.OutOrStdout())
 		},

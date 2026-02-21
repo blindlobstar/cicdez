@@ -46,7 +46,7 @@ func NewRegistryCommandWithFactory(clientFactory RegistryClientFactory) *cobra.C
 
 	addOpts := registryAddOptions{clientFactory: clientFactory}
 	addCmd := &cobra.Command{
-		Use:   "add <server>",
+		Use:   "add SERVER",
 		Short: "Add or update a registry",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -54,14 +54,14 @@ func NewRegistryCommandWithFactory(clientFactory RegistryClientFactory) *cobra.C
 			return runRegistryAdd(cmd.Context(), cmd.OutOrStdout(), addOpts)
 		},
 	}
-	addCmd.Flags().StringVar(&addOpts.username, "username", "", "Registry username (required)")
-	addCmd.Flags().StringVar(&addOpts.password, "password", "", "Registry password (required)")
+	addCmd.Flags().StringVar(&addOpts.username, "username", "", "registry username")
+	addCmd.Flags().StringVar(&addOpts.password, "password", "", "registry password")
 	addCmd.MarkFlagRequired("username")
 	addCmd.MarkFlagRequired("password")
 
 	removeOpts := registryRemoveOptions{}
 	removeCmd := &cobra.Command{
-		Use:     "remove <server>",
+		Use:     "remove SERVER",
 		Aliases: []string{"rm", "delete"},
 		Short:   "Remove a registry",
 		Args:    cobra.ExactArgs(1),
@@ -75,7 +75,7 @@ func NewRegistryCommandWithFactory(clientFactory RegistryClientFactory) *cobra.C
 	cmd.AddCommand(&cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
-		Short:   "List all registries",
+		Short:   "List registries",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runRegistryList(cmd.OutOrStdout())
 		},

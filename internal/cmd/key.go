@@ -26,13 +26,18 @@ func NewKeyCommand() *cobra.Command {
 	genOpts := keyGenerateOptions{}
 	genCmd := &cobra.Command{
 		Use:   "generate",
-		Short: "Generate a new age encryption key",
+		Short: "Generate age encryption key",
+		Long: `Generate an X25519 age key pair for encrypting secrets.
+
+The key is saved to ~/.config/cicdez/age.key by default.
+Override with --output or CICDEZ_AGE_KEY_FILE environment variable.
+The public key is printed after generation for use in encryption.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runKeyGenerate(cmd.OutOrStdout(), genOpts)
 		},
 	}
-	genCmd.Flags().BoolVarP(&genOpts.force, "force", "f", false, "Overwrite existing key file")
-	genCmd.Flags().StringVarP(&genOpts.outputPath, "output", "o", "", "Output path for the key file")
+	genCmd.Flags().BoolVarP(&genOpts.force, "force", "f", false, "overwrite existing key file")
+	genCmd.Flags().StringVarP(&genOpts.outputPath, "output", "o", "", "output path for key file")
 
 	cmd.AddCommand(genCmd)
 	return cmd
