@@ -2,12 +2,13 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"sort"
 
-	"github.com/spf13/cobra"
 	"github.com/blindlobstar/cicdez/internal/vault"
+	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
 
@@ -34,7 +35,7 @@ func NewSecretCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			addOpts.name = args[0]
 			addOpts.value = args[1]
-			return runSecretAdd(addOpts)
+			return runSecretAdd(cmd.OutOrStdout(), addOpts)
 		},
 	}
 
@@ -46,7 +47,7 @@ func NewSecretCommand() *cobra.Command {
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			removeOpts.name = args[0]
-			return runSecretRemove(removeOpts)
+			return runSecretRemove(cmd.OutOrStdout(), removeOpts)
 		},
 	}
 
@@ -56,14 +57,14 @@ func NewSecretCommand() *cobra.Command {
 		Aliases: []string{"ls"},
 		Short:   "List all secret names",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runSecretList()
+			return runSecretList(cmd.OutOrStdout())
 		},
 	})
 	cmd.AddCommand(&cobra.Command{
 		Use:   "edit",
 		Short: "Edit all secrets using $EDITOR",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runSecretEdit()
+			return runSecretEdit(cmd.OutOrStdout())
 		},
 	})
 	cmd.AddCommand(removeCmd)
@@ -71,7 +72,7 @@ func NewSecretCommand() *cobra.Command {
 	return cmd
 }
 
-func runSecretAdd(opts secretAddOptions) error {
+func runSecretAdd(out io.Writer, opts secretAddOptions) error {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get current directory: %w", err)
@@ -92,11 +93,11 @@ func runSecretAdd(opts secretAddOptions) error {
 		return fmt.Errorf("failed to save secrets: %w", err)
 	}
 
-	fmt.Printf("Secret '%s' added\n", opts.name)
+	fmt.Fprintf(out, "Secret '%s' added\n", opts.name)
 	return nil
 }
 
-func runSecretList() error {
+func runSecretList(out io.Writer) error {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get current directory: %w", err)
@@ -108,7 +109,7 @@ func runSecretList() error {
 	}
 
 	if len(secrets.Values) == 0 {
-		fmt.Println("No secrets found")
+		fmt.Fprintln(out, "No secrets found")
 		return nil
 	}
 
@@ -118,15 +119,15 @@ func runSecretList() error {
 	}
 	sort.Strings(names)
 
-	fmt.Println("Secrets:")
+	fmt.Fprintln(out, "Secrets:")
 	for _, name := range names {
-		fmt.Printf("  %s\n", name)
+		fmt.Fprintf(out, "  %s\n", name)
 	}
 
 	return nil
 }
 
-func runSecretEdit() error {
+func runSecretEdit(out io.Writer) error {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get current directory: %w", err)
@@ -183,11 +184,11 @@ func runSecretEdit() error {
 		return fmt.Errorf("failed to save secrets: %w", err)
 	}
 
-	fmt.Println("Secrets updated")
+	fmt.Fprintln(out, "Secrets updated")
 	return nil
 }
 
-func runSecretRemove(opts secretRemoveOptions) error {
+func runSecretRemove(out io.Writer, opts secretRemoveOptions) error {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get current directory: %w", err)
@@ -208,6 +209,6 @@ func runSecretRemove(opts secretRemoveOptions) error {
 		return fmt.Errorf("failed to save secrets: %w", err)
 	}
 
-	fmt.Printf("Secret '%s' removed\n", opts.name)
+	fmt.Fprintf(out, "Secret '%s' removed\n", opts.name)
 	return nil
 }

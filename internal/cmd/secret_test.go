@@ -1,9 +1,10 @@
 package cmd
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
-	"syscall"
+	"strings"
 	"testing"
 
 	"filippo.io/age"
@@ -29,20 +30,20 @@ func setupTestEnv(t *testing.T) string {
 	}
 	t.Setenv("CICDEZ_AGE_KEY_FILE", filepath.Join(tmpDir, ".keys", "age.key"))
 
-	os.Stdout = os.NewFile(uintptr(syscall.Stdin), os.DevNull)
-	t.Cleanup(func() {
-		os.Stdout.Close()
-	})
-
 	return tmpDir
 }
 
 func TestSecretAdd(t *testing.T) {
 	setupTestEnv(t)
 
-	err := runSecretAdd(secretAddOptions{name: "DB_PASSWORD", value: "secret123"})
+	cmd := NewSecretCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{"add", "DB_PASSWORD", "secret123"})
+
+	err := cmd.Execute()
 	if err != nil {
-		t.Fatalf("runSecretAdd failed: %v", err)
+		t.Fatalf("secret add failed: %v", err)
 	}
 
 	secrets, err := vault.LoadSecrets(".")
@@ -53,19 +54,33 @@ func TestSecretAdd(t *testing.T) {
 	if secrets.Values["DB_PASSWORD"] != "secret123" {
 		t.Errorf("expected DB_PASSWORD to be 'secret123', got '%s'", secrets.Values["DB_PASSWORD"])
 	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Secret 'DB_PASSWORD' added") {
+		t.Errorf("expected output to contain success message, got: %s", output)
+	}
 }
 
 func TestSecretAddUpdate(t *testing.T) {
 	setupTestEnv(t)
 
-	err := runSecretAdd(secretAddOptions{name: "API_KEY", value: "initial_value"})
+	cmd := NewSecretCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{"add", "API_KEY", "initial_value"})
+
+	err := cmd.Execute()
 	if err != nil {
-		t.Fatalf("runSecretAdd failed: %v", err)
+		t.Fatalf("secret add failed: %v", err)
 	}
 
-	err = runSecretAdd(secretAddOptions{name: "API_KEY", value: "updated_value"})
+	cmd = NewSecretCommand()
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{"add", "API_KEY", "updated_value"})
+
+	err = cmd.Execute()
 	if err != nil {
-		t.Fatalf("runSecretAdd (update) failed: %v", err)
+		t.Fatalf("secret add (update) failed: %v", err)
 	}
 
 	secrets, err := vault.LoadSecrets(".")
@@ -88,38 +103,74 @@ func TestSecretList(t *testing.T) {
 	}
 
 	for name, value := range secrets {
-		err := runSecretAdd(secretAddOptions{name: name, value: value})
+		cmd := NewSecretCommand()
+		cmd.SetOut(new(bytes.Buffer))
+		cmd.SetArgs([]string{"add", name, value})
+		err := cmd.Execute()
 		if err != nil {
-			t.Fatalf("runSecretAdd failed for %s: %v", name, err)
+			t.Fatalf("secret add failed for %s: %v", name, err)
 		}
 	}
 
-	err := runSecretList()
+	cmd := NewSecretCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{"list"})
+
+	err := cmd.Execute()
 	if err != nil {
-		t.Fatalf("runSecretList failed: %v", err)
+		t.Fatalf("secret list failed: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Secrets:") {
+		t.Errorf("expected output to contain 'Secrets:', got: %s", output)
+	}
+	for name := range secrets {
+		if !strings.Contains(output, name) {
+			t.Errorf("expected output to contain '%s', got: %s", name, output)
+		}
 	}
 }
 
 func TestSecretListEmpty(t *testing.T) {
 	setupTestEnv(t)
 
-	err := runSecretList()
+	cmd := NewSecretCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{"list"})
+
+	err := cmd.Execute()
 	if err != nil {
-		t.Fatalf("runSecretList failed on empty secrets: %v", err)
+		t.Fatalf("secret list failed on empty secrets: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "No secrets found") {
+		t.Errorf("expected output to contain 'No secrets found', got: %s", output)
 	}
 }
 
 func TestSecretRemove(t *testing.T) {
 	setupTestEnv(t)
 
-	err := runSecretAdd(secretAddOptions{name: "TEMP_SECRET", value: "temp_value"})
+	cmd := NewSecretCommand()
+	cmd.SetOut(new(bytes.Buffer))
+	cmd.SetArgs([]string{"add", "TEMP_SECRET", "temp_value"})
+	err := cmd.Execute()
 	if err != nil {
-		t.Fatalf("runSecretAdd failed: %v", err)
+		t.Fatalf("secret add failed: %v", err)
 	}
 
-	err = runSecretRemove(secretRemoveOptions{name: "TEMP_SECRET"})
+	cmd = NewSecretCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{"remove", "TEMP_SECRET"})
+
+	err = cmd.Execute()
 	if err != nil {
-		t.Fatalf("runSecretRemove failed: %v", err)
+		t.Fatalf("secret remove failed: %v", err)
 	}
 
 	secrets, err := vault.LoadSecrets(".")
@@ -130,12 +181,23 @@ func TestSecretRemove(t *testing.T) {
 	if _, exists := secrets.Values["TEMP_SECRET"]; exists {
 		t.Error("expected TEMP_SECRET to be removed, but it still exists")
 	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Secret 'TEMP_SECRET' removed") {
+		t.Errorf("expected output to contain success message, got: %s", output)
+	}
 }
 
 func TestSecretRemoveNonExistent(t *testing.T) {
 	setupTestEnv(t)
 
-	err := runSecretRemove(secretRemoveOptions{name: "NON_EXISTENT"})
+	cmd := NewSecretCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"remove", "NON_EXISTENT"})
+
+	err := cmd.Execute()
 	if err == nil {
 		t.Error("expected error when removing non-existent secret, got nil")
 	}

@@ -1,12 +1,14 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
+	"strings"
 	"testing"
 
+	"github.com/blindlobstar/cicdez/internal/vault"
 	"github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
-	"github.com/blindlobstar/cicdez/internal/vault"
 )
 
 type mockRegistryClient struct {
@@ -27,16 +29,14 @@ func mockClientFactory() (RegistryClient, error) {
 func TestRegistryAdd(t *testing.T) {
 	setupTestEnv(t)
 
-	opts := registryAddOptions{
-		server:        "registry.example.com",
-		username:      "admin",
-		password:      "secret123",
-		clientFactory: mockClientFactory,
-	}
+	cmd := NewRegistryCommandWithFactory(mockClientFactory)
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{"add", "registry.example.com", "--username", "admin", "--password", "secret123"})
 
-	err := runRegistryAdd(context.Background(), opts)
+	err := cmd.Execute()
 	if err != nil {
-		t.Fatalf("runRegistryAdd failed: %v", err)
+		t.Fatalf("registry add failed: %v", err)
 	}
 
 	config, err := vault.LoadConfig(".")
@@ -60,6 +60,11 @@ func TestRegistryAdd(t *testing.T) {
 	if reg.Password != "secret123" {
 		t.Errorf("expected password 'secret123', got '%s'", reg.Password)
 	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Login Succeeded") {
+		t.Errorf("expected output to contain 'Login Succeeded', got: %s", output)
+	}
 }
 
 func TestRegistryAddWithIdentityToken(t *testing.T) {
@@ -78,16 +83,14 @@ func TestRegistryAddWithIdentityToken(t *testing.T) {
 		}, nil
 	}
 
-	opts := registryAddOptions{
-		server:        "gcr.io",
-		username:      "user",
-		password:      "pass",
-		clientFactory: tokenFactory,
-	}
+	cmd := NewRegistryCommandWithFactory(tokenFactory)
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{"add", "gcr.io", "--username", "user", "--password", "pass"})
 
-	err := runRegistryAdd(context.Background(), opts)
+	err := cmd.Execute()
 	if err != nil {
-		t.Fatalf("runRegistryAdd failed: %v", err)
+		t.Fatalf("registry add failed: %v", err)
 	}
 
 	config, err := vault.LoadConfig(".")
@@ -108,28 +111,22 @@ func TestRegistryAddWithIdentityToken(t *testing.T) {
 func TestRegistryAddUpdate(t *testing.T) {
 	setupTestEnv(t)
 
-	opts := registryAddOptions{
-		server:        "myregistry.com",
-		username:      "olduser",
-		password:      "oldpass",
-		clientFactory: mockClientFactory,
-	}
+	cmd := NewRegistryCommandWithFactory(mockClientFactory)
+	cmd.SetOut(new(bytes.Buffer))
+	cmd.SetArgs([]string{"add", "myregistry.com", "--username", "olduser", "--password", "oldpass"})
 
-	err := runRegistryAdd(context.Background(), opts)
+	err := cmd.Execute()
 	if err != nil {
-		t.Fatalf("runRegistryAdd failed: %v", err)
+		t.Fatalf("registry add failed: %v", err)
 	}
 
-	opts = registryAddOptions{
-		server:        "myregistry.com",
-		username:      "newuser",
-		password:      "newpass",
-		clientFactory: mockClientFactory,
-	}
+	cmd = NewRegistryCommandWithFactory(mockClientFactory)
+	cmd.SetOut(new(bytes.Buffer))
+	cmd.SetArgs([]string{"add", "myregistry.com", "--username", "newuser", "--password", "newpass"})
 
-	err = runRegistryAdd(context.Background(), opts)
+	err = cmd.Execute()
 	if err != nil {
-		t.Fatalf("runRegistryAdd (update) failed: %v", err)
+		t.Fatalf("registry add (update) failed: %v", err)
 	}
 
 	config, err := vault.LoadConfig(".")
@@ -160,49 +157,75 @@ func TestRegistryList(t *testing.T) {
 	}
 
 	for server, r := range registries {
-		opts := registryAddOptions{
-			server:        server,
-			username:      r.username,
-			password:      r.password,
-			clientFactory: mockClientFactory,
-		}
-		err := runRegistryAdd(context.Background(), opts)
+		cmd := NewRegistryCommandWithFactory(mockClientFactory)
+		cmd.SetOut(new(bytes.Buffer))
+		cmd.SetArgs([]string{"add", server, "--username", r.username, "--password", r.password})
+		err := cmd.Execute()
 		if err != nil {
-			t.Fatalf("runRegistryAdd failed for %s: %v", server, err)
+			t.Fatalf("registry add failed for %s: %v", server, err)
 		}
 	}
 
-	err := runRegistryList()
+	cmd := NewRegistryCommandWithFactory(mockClientFactory)
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{"list"})
+
+	err := cmd.Execute()
 	if err != nil {
-		t.Fatalf("runRegistryList failed: %v", err)
+		t.Fatalf("registry list failed: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Registries:") {
+		t.Errorf("expected output to contain 'Registries:', got: %s", output)
+	}
+	for server := range registries {
+		if !strings.Contains(output, server) {
+			t.Errorf("expected output to contain '%s', got: %s", server, output)
+		}
 	}
 }
 
 func TestRegistryListEmpty(t *testing.T) {
 	setupTestEnv(t)
 
-	err := runRegistryList()
+	cmd := NewRegistryCommandWithFactory(mockClientFactory)
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{"list"})
+
+	err := cmd.Execute()
 	if err != nil {
-		t.Fatalf("runRegistryList failed on empty registries: %v", err)
+		t.Fatalf("registry list failed on empty registries: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "No registries found") {
+		t.Errorf("expected output to contain 'No registries found', got: %s", output)
 	}
 }
 
 func TestRegistryRemove(t *testing.T) {
 	setupTestEnv(t)
 
-	err := runRegistryAdd(context.Background(), registryAddOptions{
-		server:        "temp-registry.com",
-		username:      "tempuser",
-		password:      "temppass",
-		clientFactory: mockClientFactory,
-	})
+	cmd := NewRegistryCommandWithFactory(mockClientFactory)
+	cmd.SetOut(new(bytes.Buffer))
+	cmd.SetArgs([]string{"add", "temp-registry.com", "--username", "tempuser", "--password", "temppass"})
+
+	err := cmd.Execute()
 	if err != nil {
-		t.Fatalf("runRegistryAdd failed: %v", err)
+		t.Fatalf("registry add failed: %v", err)
 	}
 
-	err = runRegistryRemove(registryRemoveOptions{server: "temp-registry.com"})
+	cmd = NewRegistryCommandWithFactory(mockClientFactory)
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{"remove", "temp-registry.com"})
+
+	err = cmd.Execute()
 	if err != nil {
-		t.Fatalf("runRegistryRemove failed: %v", err)
+		t.Fatalf("registry remove failed: %v", err)
 	}
 
 	config, err := vault.LoadConfig(".")
@@ -213,12 +236,23 @@ func TestRegistryRemove(t *testing.T) {
 	if _, exists := config.Registries["temp-registry.com"]; exists {
 		t.Error("expected temp-registry.com to be removed, but it still exists")
 	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Registry 'temp-registry.com' removed") {
+		t.Errorf("expected output to contain success message, got: %s", output)
+	}
 }
 
 func TestRegistryRemoveNonExistent(t *testing.T) {
 	setupTestEnv(t)
 
-	err := runRegistryRemove(registryRemoveOptions{server: "non-existent"})
+	cmd := NewRegistryCommandWithFactory(mockClientFactory)
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"remove", "non-existent"})
+
+	err := cmd.Execute()
 	if err == nil {
 		t.Error("expected error when removing non-existent registry, got nil")
 	}
@@ -235,14 +269,13 @@ func TestRegistryLoginError(t *testing.T) {
 		}, nil
 	}
 
-	opts := registryAddOptions{
-		server:        "private.registry.com",
-		username:      "user",
-		password:      "wrongpass",
-		clientFactory: errorFactory,
-	}
+	cmd := NewRegistryCommandWithFactory(errorFactory)
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"add", "private.registry.com", "--username", "user", "--password", "wrongpass"})
 
-	err := runRegistryAdd(context.Background(), opts)
+	err := cmd.Execute()
 	if err == nil {
 		t.Error("expected error on login failure, got nil")
 	}

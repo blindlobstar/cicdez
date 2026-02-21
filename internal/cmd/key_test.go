@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,9 +12,14 @@ func TestKeyGenerate(t *testing.T) {
 	tmpDir := t.TempDir()
 	keyPath := filepath.Join(tmpDir, "test.key")
 
-	err := runKeyGenerate(keyGenerateOptions{outputPath: keyPath})
+	cmd := NewKeyCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{"generate", "-o", keyPath})
+
+	err := cmd.Execute()
 	if err != nil {
-		t.Fatalf("runKeyGenerate failed: %v", err)
+		t.Fatalf("key generate failed: %v", err)
 	}
 
 	data, err := os.ReadFile(keyPath)
@@ -40,10 +46,23 @@ func TestKeyGenerate(t *testing.T) {
 		t.Errorf("expected file permissions 0600, got %o", info.Mode().Perm())
 	}
 
+	output := buf.String()
+	if !strings.Contains(output, "Key generated successfully") {
+		t.Errorf("expected output to contain success message, got: %s", output)
+	}
+	if !strings.Contains(output, "Public key: age1") {
+		t.Errorf("expected output to contain public key, got: %s", output)
+	}
+
 	// Test overwrite with --force
-	err = runKeyGenerate(keyGenerateOptions{outputPath: keyPath, force: true})
+	buf.Reset()
+	cmd = NewKeyCommand()
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{"generate", "-o", keyPath, "--force"})
+
+	err = cmd.Execute()
 	if err != nil {
-		t.Fatalf("runKeyGenerate with --force failed: %v", err)
+		t.Fatalf("key generate with --force failed: %v", err)
 	}
 }
 
@@ -55,7 +74,13 @@ func TestKeyGenerateExistingNoForce(t *testing.T) {
 		t.Fatalf("failed to create existing key file: %v", err)
 	}
 
-	err := runKeyGenerate(keyGenerateOptions{outputPath: keyPath})
+	cmd := NewKeyCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"generate", "-o", keyPath})
+
+	err := cmd.Execute()
 	if err == nil {
 		t.Error("expected error when key exists without --force, got nil")
 	}
