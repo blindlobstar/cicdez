@@ -32,10 +32,9 @@ func TestRegistryAdd(t *testing.T) {
 		username:      "admin",
 		password:      "secret123",
 		clientFactory: mockClientFactory,
-		ctx:           context.Background(),
 	}
 
-	err := runRegistryAdd(opts)
+	err := runRegistryAdd(context.Background(), opts)
 	if err != nil {
 		t.Fatalf("runRegistryAdd failed: %v", err)
 	}
@@ -84,10 +83,9 @@ func TestRegistryAddWithIdentityToken(t *testing.T) {
 		username:      "user",
 		password:      "pass",
 		clientFactory: tokenFactory,
-		ctx:           context.Background(),
 	}
 
-	err := runRegistryAdd(opts)
+	err := runRegistryAdd(context.Background(), opts)
 	if err != nil {
 		t.Fatalf("runRegistryAdd failed: %v", err)
 	}
@@ -115,10 +113,9 @@ func TestRegistryAddUpdate(t *testing.T) {
 		username:      "olduser",
 		password:      "oldpass",
 		clientFactory: mockClientFactory,
-		ctx:           context.Background(),
 	}
 
-	err := runRegistryAdd(opts)
+	err := runRegistryAdd(context.Background(), opts)
 	if err != nil {
 		t.Fatalf("runRegistryAdd failed: %v", err)
 	}
@@ -128,10 +125,9 @@ func TestRegistryAddUpdate(t *testing.T) {
 		username:      "newuser",
 		password:      "newpass",
 		clientFactory: mockClientFactory,
-		ctx:           context.Background(),
 	}
 
-	err = runRegistryAdd(opts)
+	err = runRegistryAdd(context.Background(), opts)
 	if err != nil {
 		t.Fatalf("runRegistryAdd (update) failed: %v", err)
 	}
@@ -169,9 +165,8 @@ func TestRegistryList(t *testing.T) {
 			username:      r.username,
 			password:      r.password,
 			clientFactory: mockClientFactory,
-			ctx:           context.Background(),
 		}
-		err := runRegistryAdd(opts)
+		err := runRegistryAdd(context.Background(), opts)
 		if err != nil {
 			t.Fatalf("runRegistryAdd failed for %s: %v", server, err)
 		}
@@ -195,12 +190,11 @@ func TestRegistryListEmpty(t *testing.T) {
 func TestRegistryRemove(t *testing.T) {
 	setupTestEnv(t)
 
-	err := runRegistryAdd(registryAddOptions{
+	err := runRegistryAdd(context.Background(), registryAddOptions{
 		server:        "temp-registry.com",
 		username:      "tempuser",
 		password:      "temppass",
 		clientFactory: mockClientFactory,
-		ctx:           context.Background(),
 	})
 	if err != nil {
 		t.Fatalf("runRegistryAdd failed: %v", err)
@@ -246,10 +240,9 @@ func TestRegistryLoginError(t *testing.T) {
 		username:      "user",
 		password:      "wrongpass",
 		clientFactory: errorFactory,
-		ctx:           context.Background(),
 	}
 
-	err := runRegistryAdd(opts)
+	err := runRegistryAdd(context.Background(), opts)
 	if err == nil {
 		t.Error("expected error on login failure, got nil")
 	}

@@ -27,7 +27,6 @@ type registryAddOptions struct {
 	username      string
 	password      string
 	clientFactory RegistryClientFactory
-	ctx           context.Context
 }
 
 type registryRemoveOptions struct {
@@ -51,8 +50,7 @@ func NewRegistryCommandWithFactory(clientFactory RegistryClientFactory) *cobra.C
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			addOpts.server = args[0]
-			addOpts.ctx = cmd.Context()
-			return runRegistryAdd(addOpts)
+			return runRegistryAdd(cmd.Context(), addOpts)
 		},
 	}
 	addCmd.Flags().StringVar(&addOpts.username, "username", "", "Registry username (required)")
@@ -86,7 +84,7 @@ func NewRegistryCommandWithFactory(clientFactory RegistryClientFactory) *cobra.C
 	return cmd
 }
 
-func runRegistryAdd(opts registryAddOptions) error {
+func runRegistryAdd(ctx context.Context, opts registryAddOptions) error {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get current directory: %w", err)
@@ -109,7 +107,7 @@ func runRegistryAdd(opts registryAddOptions) error {
 		ServerAddress: opts.server,
 	}
 
-	resp, err := dockerClient.RegistryLogin(opts.ctx, loginOpts)
+	resp, err := dockerClient.RegistryLogin(ctx, loginOpts)
 	if err != nil {
 		return err
 	}

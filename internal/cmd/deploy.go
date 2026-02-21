@@ -21,7 +21,6 @@ type deployOptions struct {
 	noCache      bool
 	pull         bool
 	server       string
-	ctx          context.Context
 }
 
 func NewDeployCommand() *cobra.Command {
@@ -34,8 +33,7 @@ func NewDeployCommand() *cobra.Command {
 			if len(args) > 0 {
 				opts.stack = args[0]
 			}
-			opts.ctx = cmd.Context()
-			return runDeploy(opts)
+			return runDeploy(cmd.Context(), opts)
 		},
 	}
 	cmd.Flags().StringArrayVarP(&opts.composeFiles, "file", "f", []string{"compose.yaml"}, "Compose file path(s)")
@@ -49,7 +47,7 @@ func NewDeployCommand() *cobra.Command {
 	return cmd
 }
 
-func runDeploy(opts deployOptions) error {
+func runDeploy(ctx context.Context, opts deployOptions) error {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get current directory: %w", err)
@@ -60,12 +58,13 @@ func runDeploy(opts deployOptions) error {
 		return err
 	}
 
-	project, err := docker.LoadCompose(opts.ctx, os.Environ(), opts.composeFiles...)
+	project, err := docker.LoadCompose(ctx, os.Environ(), opts.composeFiles...)
 	if err != nil {
 		return err
 	}
 
 	if opts.stack == "" {
+		// compose-go defaults project.Name to the directory name if not set
 		opts.stack = project.Name
 	}
 
@@ -89,7 +88,7 @@ func runDeploy(opts deployOptions) error {
 			Push:       true,
 		}
 
-		if err := docker.Build(opts.ctx, dockerClient, project, buildOpts); err != nil {
+		if err := docker.Build(ctx, dockerClient, project, buildOpts); err != nil {
 			return fmt.Errorf("failed to build and push images: %w", err)
 		}
 	}
@@ -104,7 +103,7 @@ func runDeploy(opts deployOptions) error {
 		return err
 	}
 
-	err = docker.Deploy(opts.ctx, dockerClient, project, docker.DeployOptions{
+	err = docker.Deploy(ctx, dockerClient, project, docker.DeployOptions{
 		Cwd:          cwd,
 		Secrets:      secrets,
 		Stack:        opts.stack,
