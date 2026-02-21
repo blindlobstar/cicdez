@@ -15,11 +15,6 @@ const EnvAgeKeyPath = "CICDEZ_AGE_KEY_FILE"
 
 var identity *age.X25519Identity
 
-// SetIdentity sets the age identity for testing purposes
-func SetIdentity(id *age.X25519Identity) {
-	identity = id
-}
-
 func EncryptFile(path string, data []byte) error {
 	if err := loadIdentity(); err != nil {
 		return fmt.Errorf("failed to load recipients: %w", err)

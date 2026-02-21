@@ -19,7 +19,6 @@ func setupTestEnv(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("failed to generate age key: %v", err)
 	}
-	vault.SetIdentity(newIdentity)
 
 	if err := os.MkdirAll(filepath.Join(tmpDir, ".keys"), 0o700); err != nil {
 		t.Fatalf("failed to create key directory: %v", err)
@@ -28,7 +27,7 @@ func setupTestEnv(t *testing.T) string {
 	if err := os.WriteFile(filepath.Join(tmpDir, ".keys", "age.key"), []byte(newIdentity.String()+"\n"), 0o600); err != nil {
 		t.Fatalf("failed to write age key: %v", err)
 	}
-	os.Setenv("CICDEZ_AGE_KEY_PATH", filepath.Join(tmpDir, ".keys", "age.key"))
+	t.Setenv("CICDEZ_AGE_KEY_FILE", filepath.Join(tmpDir, ".keys", "age.key"))
 
 	os.Stdout = os.NewFile(uintptr(syscall.Stdin), os.DevNull)
 	t.Cleanup(func() {
