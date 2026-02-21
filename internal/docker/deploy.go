@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/blindlobstar/cicdez/internal/vault"
 	"github.com/compose-spec/compose-go/v2/types"
 	"github.com/containerd/errdefs"
 	"github.com/distribution/reference"
@@ -25,6 +26,8 @@ const (
 )
 
 type DeployOptions struct {
+	Cwd          string
+	Secrets      vault.Secrets
 	Stack        string
 	Prune        bool
 	ResolveImage string
@@ -33,6 +36,14 @@ type DeployOptions struct {
 }
 
 func Deploy(ctx context.Context, dockerClient client.APIClient, project types.Project, opts DeployOptions) error {
+	if err := ProcessLocalConfigs(&project, opts.Cwd); err != nil {
+		return fmt.Errorf("failed to process local configs: %w", err)
+	}
+
+	if err := ProcessSensitiveSecrets(&project, opts.Secrets); err != nil {
+		return fmt.Errorf("failed to process sensitive secrets: %w", err)
+	}
+
 	if err := checkDaemonIsSwarmManager(ctx, dockerClient); err != nil {
 		return err
 	}

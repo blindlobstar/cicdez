@@ -2,14 +2,11 @@ package cmd
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"os"
 
 	"github.com/blindlobstar/cicdez/internal/docker"
 	"github.com/blindlobstar/cicdez/internal/vault"
-	"github.com/compose-spec/compose-go/v2/types"
 	"github.com/moby/moby/client"
 	"github.com/spf13/cobra"
 )
@@ -72,17 +69,9 @@ func runDeploy(opts deployOptions) error {
 		opts.stack = project.Name
 	}
 
-	cicdezSecrets, err := vault.LoadSecrets(cwd)
+	secrets, err := vault.LoadSecrets(cwd)
 	if err != nil {
 		return fmt.Errorf("failed to load secrets: %w", err)
-	}
-
-	if err := docker.ProcessLocalConfigs(&project, cwd); err != nil {
-		return fmt.Errorf("failed to process local_configs: %w", err)
-	}
-
-	if err := processSensitiveSecrets(&project, cicdezSecrets); err != nil {
-		return fmt.Errorf("failed to process sensitive secrets: %w", err)
 	}
 
 	if !opts.noBuild && docker.HasBuildConfig(project) {
@@ -116,6 +105,8 @@ func runDeploy(opts deployOptions) error {
 	}
 
 	err = docker.Deploy(opts.ctx, dockerClient, project, docker.DeployOptions{
+		Cwd:          cwd,
+		Secrets:      secrets,
 		Stack:        opts.stack,
 		Prune:        opts.prune,
 		ResolveImage: opts.resolveImage,
@@ -124,41 +115,6 @@ func runDeploy(opts deployOptions) error {
 	})
 	if err != nil {
 		return err
-	}
-
-	return nil
-}
-
-func processSensitiveSecrets(project *types.Project, allSecrets vault.Secrets) error {
-	if project.Secrets == nil {
-		project.Secrets = make(types.Secrets)
-	}
-
-	for svcName, svc := range project.Services {
-		for name, sensitive := range svc.Sensitive {
-			content, err := vault.FormatSecretsForSensitive(allSecrets, sensitive.Secrets, sensitive.Format)
-			if err != nil {
-				return fmt.Errorf("failed to format sensitive secrets for service %s target %s: %w", svc.Name, sensitive.Target, err)
-			}
-
-			hash := sha256.Sum256(content)
-			hashStr := hex.EncodeToString(hash[:])[:8]
-
-			secretName := fmt.Sprintf("%s_%s", name, hashStr)
-
-			project.Secrets[secretName] = types.SecretConfig{
-				Content: string(content),
-			}
-
-			svc.Secrets = append(svc.Secrets, types.ServiceSecretConfig{
-				Source: secretName,
-				Target: sensitive.Target,
-				UID:    sensitive.UID,
-				GID:    sensitive.GID,
-				Mode:   sensitive.Mode,
-			})
-		}
-		project.Services[svcName] = svc
 	}
 
 	return nil
