@@ -66,7 +66,6 @@ func runBuild(ctx context.Context, out io.Writer, opts buildOptions) error {
 
 	buildOpts := docker.BuildOptions{
 		Services:   servicesToBuild,
-		Cwd:        cwd,
 		Registries: config.Registries,
 		NoCache:    opts.noCache,
 		Pull:       opts.pull,

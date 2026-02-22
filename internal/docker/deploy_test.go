@@ -29,7 +29,7 @@ func TestProcessSensitiveSecrets_ExplicitTarget(t *testing.T) {
 		"db_password": "secret123",
 	}
 
-	err := processSensitiveSecrets(&project, secrets, "")
+	err := processSensitiveSecrets(&project, secrets)
 	if err != nil {
 		t.Fatalf("processSensitiveSecrets failed: %v", err)
 	}

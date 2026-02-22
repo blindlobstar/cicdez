@@ -87,7 +87,6 @@ func runDeploy(ctx context.Context, out io.Writer, opts deployOptions) error {
 		defer dockerClient.Close()
 
 		buildOpts := docker.BuildOptions{
-			Cwd:        cwd,
 			Registries: cfg.Registries,
 			NoCache:    opts.noCache,
 			Pull:       opts.pull,
@@ -111,7 +110,6 @@ func runDeploy(ctx context.Context, out io.Writer, opts deployOptions) error {
 	}
 
 	err = docker.Deploy(ctx, dockerClient, project, docker.DeployOptions{
-		Cwd:          cwd,
 		Secrets:      secrets,
 		Stack:        opts.stack,
 		Prune:        opts.prune,

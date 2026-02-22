@@ -23,7 +23,6 @@ import (
 
 type BuildOptions struct {
 	Services   map[string]bool
-	Cwd        string
 	Registries map[string]registry.AuthConfig
 	NoCache    bool
 	Pull       bool
@@ -48,7 +47,7 @@ func Build(ctx context.Context, dockerClient client.APIClient, project types.Pro
 
 		fmt.Fprintf(opt.Out, "Building %s...\n", imageName)
 
-		if err := buildImage(ctx, dockerClient, imageName, svc.Build, svc.Platform, opt); err != nil {
+		if err := buildImage(ctx, dockerClient, imageName, svc.Build, svc.Platform, project.WorkingDir, opt); err != nil {
 			return fmt.Errorf("failed to build %s: %w", svc.Name, err)
 		}
 
@@ -74,14 +73,14 @@ func readIgnorePatterns(buildContext string) []string {
 	return patterns
 }
 
-func buildImage(ctx context.Context, dockerClient client.APIClient, imageName string, build *types.BuildConfig, platform string, opt BuildOptions) error {
+func buildImage(ctx context.Context, dockerClient client.APIClient, imageName string, build *types.BuildConfig, platform string, projectDir string, opt BuildOptions) error {
 	buildContext := build.Context
 	if buildContext == "" {
 		buildContext = "."
 	}
 
 	if !filepath.IsAbs(buildContext) {
-		buildContext = filepath.Join(opt.Cwd, buildContext)
+		buildContext = filepath.Join(projectDir, buildContext)
 	}
 
 	dockerfile := build.Dockerfile

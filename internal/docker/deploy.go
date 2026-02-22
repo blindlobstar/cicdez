@@ -30,7 +30,6 @@ const (
 )
 
 type DeployOptions struct {
-	Cwd          string
 	Secrets      vault.Secrets
 	Stack        string
 	Prune        bool
@@ -41,11 +40,11 @@ type DeployOptions struct {
 }
 
 func Deploy(ctx context.Context, dockerClient client.APIClient, project types.Project, opts DeployOptions) error {
-	if err := processLocalConfigs(&project, opts.Cwd); err != nil {
+	if err := processLocalConfigs(&project); err != nil {
 		return fmt.Errorf("failed to process local configs: %w", err)
 	}
 
-	if err := processSensitiveSecrets(&project, opts.Secrets, opts.Cwd); err != nil {
+	if err := processSensitiveSecrets(&project, opts.Secrets); err != nil {
 		return fmt.Errorf("failed to process sensitive secrets: %w", err)
 	}
 
@@ -344,7 +343,7 @@ func hashedName(name string, content []byte) string {
 	return fmt.Sprintf("%s_%s", name, hex.EncodeToString(hash[:])[:8])
 }
 
-func processLocalConfigs(project *types.Project, cwd string) error {
+func processLocalConfigs(project *types.Project) error {
 	if project.Configs == nil {
 		project.Configs = make(types.Configs)
 	}
@@ -353,7 +352,7 @@ func processLocalConfigs(project *types.Project, cwd string) error {
 		for name, localConfig := range svc.LocalConfigs {
 			sourcePath := localConfig.Source
 			if !filepath.IsAbs(sourcePath) {
-				sourcePath = filepath.Join(cwd, sourcePath)
+				sourcePath = filepath.Join(project.WorkingDir, sourcePath)
 			}
 
 			content, err := os.ReadFile(sourcePath)
@@ -377,14 +376,14 @@ func processLocalConfigs(project *types.Project, cwd string) error {
 	return nil
 }
 
-func processSensitiveSecrets(project *types.Project, allSecrets vault.Secrets, cwd string) error {
+func processSensitiveSecrets(project *types.Project, allSecrets vault.Secrets) error {
 	if project.Secrets == nil {
 		project.Secrets = make(types.Secrets)
 	}
 
 	for svcName, svc := range project.Services {
 		for name, sensitive := range svc.Sensitive {
-			content, err := formatSensitiveSecrets(allSecrets, sensitive, cwd)
+			content, err := formatSensitiveSecrets(allSecrets, sensitive, project.WorkingDir)
 			if err != nil {
 				return fmt.Errorf("failed to format sensitive secrets for service %s target %s: %w", svc.Name, sensitive.Target, err)
 			}
