@@ -2,11 +2,15 @@ package docker
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 
 	"github.com/blindlobstar/cicdez/internal/vault"
 	"github.com/compose-spec/compose-go/v2/types"
@@ -37,11 +41,11 @@ type DeployOptions struct {
 }
 
 func Deploy(ctx context.Context, dockerClient client.APIClient, project types.Project, opts DeployOptions) error {
-	if err := ProcessLocalConfigs(&project, opts.Cwd); err != nil {
+	if err := processLocalConfigs(&project, opts.Cwd); err != nil {
 		return fmt.Errorf("failed to process local configs: %w", err)
 	}
 
-	if err := ProcessSensitiveSecrets(&project, opts.Secrets); err != nil {
+	if err := processSensitiveSecrets(&project, opts.Secrets); err != nil {
 		return fmt.Errorf("failed to process sensitive secrets: %w", err)
 	}
 
@@ -333,4 +337,73 @@ func HasBuildConfig(project types.Project) bool {
 		}
 	}
 	return false
+}
+
+func hashedName(name string, content []byte) string {
+	hash := sha256.Sum256(content)
+	return fmt.Sprintf("%s_%s", name, hex.EncodeToString(hash[:])[:8])
+}
+
+func processLocalConfigs(project *types.Project, cwd string) error {
+	if project.Configs == nil {
+		project.Configs = make(types.Configs)
+	}
+
+	for svcName, svc := range project.Services {
+		for name, localConfig := range svc.LocalConfigs {
+			sourcePath := localConfig.Source
+			if !filepath.IsAbs(sourcePath) {
+				sourcePath = filepath.Join(cwd, sourcePath)
+			}
+
+			content, err := os.ReadFile(sourcePath)
+			if err != nil {
+				return fmt.Errorf("failed to read local config file %s for service %s: %w", localConfig.Source, svc.Name, err)
+			}
+
+			configName := hashedName(name, content)
+			project.Configs[configName] = types.ConfigObjConfig{
+				Content: string(content),
+			}
+
+			svc.Configs = append(svc.Configs, types.ServiceConfigObjConfig{
+				Source: configName,
+				Target: localConfig.Target,
+			})
+		}
+		project.Services[svcName] = svc
+	}
+
+	return nil
+}
+
+func processSensitiveSecrets(project *types.Project, allSecrets vault.Secrets) error {
+	if project.Secrets == nil {
+		project.Secrets = make(types.Secrets)
+	}
+
+	for svcName, svc := range project.Services {
+		for name, sensitive := range svc.Sensitive {
+			content, err := vault.FormatSecretsForSensitive(allSecrets, sensitive.Secrets, sensitive.Format)
+			if err != nil {
+				return fmt.Errorf("failed to format sensitive secrets for service %s target %s: %w", svc.Name, sensitive.Target, err)
+			}
+
+			secretName := hashedName(name, content)
+			project.Secrets[secretName] = types.SecretConfig{
+				Content: string(content),
+			}
+
+			svc.Secrets = append(svc.Secrets, types.ServiceSecretConfig{
+				Source: secretName,
+				Target: sensitive.Target,
+				UID:    sensitive.UID,
+				GID:    sensitive.GID,
+				Mode:   sensitive.Mode,
+			})
+		}
+		project.Services[svcName] = svc
+	}
+
+	return nil
 }
