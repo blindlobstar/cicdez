@@ -92,12 +92,19 @@ func ConvertNetworks(stack string, networks types.Networks, serviceNetworks map[
 			Labels:     AddStackLabel(stack, net.Labels),
 			Driver:     net.Driver,
 			Options:    net.DriverOpts,
+			Internal:   net.Internal,
 			Attachable: net.Attachable,
 		}
 
-		if net.Ipam.Driver != "" {
+		if net.Ipam.Driver != "" || len(net.Ipam.Config) > 0 {
 			opts.IPAM = &network.IPAM{
 				Driver: net.Ipam.Driver,
+			}
+			for _, ipamConfig := range net.Ipam.Config {
+				sn, _ := netip.ParsePrefix(ipamConfig.Subnet)
+				opts.IPAM.Config = append(opts.IPAM.Config, network.IPAMConfig{
+					Subnet: sn,
+				})
 			}
 		}
 
@@ -126,13 +133,15 @@ func ConvertSecrets(stack string, secrets types.Secrets) ([]swarm.SecretSpec, er
 
 		var data []byte
 		var err error
-		if secret.File != "" {
-			data, err = os.ReadFile(secret.File)
-			if err != nil {
-				return nil, fmt.Errorf("failed to read secret file %s: %w", secret.File, err)
+		if secret.Driver == "" {
+			if secret.File != "" {
+				data, err = os.ReadFile(secret.File)
+				if err != nil {
+					return nil, fmt.Errorf("failed to read secret file %s: %w", secret.File, err)
+				}
+			} else if secret.Content != "" {
+				data = []byte(secret.Content)
 			}
-		} else if secret.Content != "" {
-			data = []byte(secret.Content)
 		}
 
 		spec := swarm.SecretSpec{
@@ -142,6 +151,19 @@ func ConvertSecrets(stack string, secrets types.Secrets) ([]swarm.SecretSpec, er
 			},
 			Data: data,
 		}
+
+		if secret.Driver != "" {
+			spec.Driver = &swarm.Driver{
+				Name:    secret.Driver,
+				Options: secret.DriverOpts,
+			}
+		}
+		if secret.TemplateDriver != "" {
+			spec.Templating = &swarm.Driver{
+				Name: secret.TemplateDriver,
+			}
+		}
+
 		result = append(result, spec)
 	}
 
@@ -163,13 +185,15 @@ func ConvertConfigs(stack string, configs types.Configs) ([]swarm.ConfigSpec, er
 
 		var data []byte
 		var err error
-		if config.File != "" {
-			data, err = os.ReadFile(config.File)
-			if err != nil {
-				return nil, fmt.Errorf("failed to read config file %s: %w", config.File, err)
+		if config.Driver == "" {
+			if config.File != "" {
+				data, err = os.ReadFile(config.File)
+				if err != nil {
+					return nil, fmt.Errorf("failed to read config file %s: %w", config.File, err)
+				}
+			} else if config.Content != "" {
+				data = []byte(config.Content)
 			}
-		} else if config.Content != "" {
-			data = []byte(config.Content)
 		}
 
 		spec := swarm.ConfigSpec{
@@ -179,6 +203,13 @@ func ConvertConfigs(stack string, configs types.Configs) ([]swarm.ConfigSpec, er
 			},
 			Data: data,
 		}
+
+		if config.TemplateDriver != "" {
+			spec.Templating = &swarm.Driver{
+				Name: config.TemplateDriver,
+			}
+		}
+
 		result = append(result, spec)
 	}
 
@@ -189,7 +220,7 @@ func ConvertServices(ctx context.Context, apiClient client.APIClient, stack stri
 	result := make(map[string]swarm.ServiceSpec)
 
 	for _, svc := range project.Services {
-		spec, err := convertService(ctx, apiClient, stack, svc, project.Networks, project.Secrets, project.Configs)
+		spec, err := convertService(ctx, apiClient, stack, svc, project.Networks, project.Volumes, project.Secrets, project.Configs)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert service %s: %w", svc.Name, err)
 		}
@@ -199,7 +230,7 @@ func ConvertServices(ctx context.Context, apiClient client.APIClient, stack stri
 	return result, nil
 }
 
-func convertService(ctx context.Context, apiClient client.APIClient, stack string, svc types.ServiceConfig, networks types.Networks, secrets types.Secrets, configs types.Configs) (swarm.ServiceSpec, error) {
+func convertService(ctx context.Context, apiClient client.APIClient, stack string, svc types.ServiceConfig, networks types.Networks, volumes types.Volumes, secrets types.Secrets, configs types.Configs) (swarm.ServiceSpec, error) {
 	var deployLabels types.Labels
 	if svc.Deploy != nil {
 		deployLabels = svc.Deploy.Labels
@@ -245,6 +276,19 @@ func convertService(ctx context.Context, apiClient client.APIClient, stack strin
 		OomScoreAdj:     svc.OomScoreAdj,
 	}
 
+	if svc.CredentialSpec != nil {
+		credentialSpec, credConfigRef, err := convertCredentialSpec(ctx, apiClient, stack, *svc.CredentialSpec, configs)
+		if err != nil {
+			return swarm.ServiceSpec{}, err
+		}
+		containerSpec.Privileges = &swarm.Privileges{
+			CredentialSpec: credentialSpec,
+		}
+		if credConfigRef != nil {
+			containerSpec.Configs = append(containerSpec.Configs, credConfigRef)
+		}
+	}
+
 	if svc.Environment != nil {
 		containerSpec.Env = make([]string, 0, len(svc.Environment))
 		for k, v := range svc.Environment {
@@ -258,11 +302,9 @@ func convertService(ctx context.Context, apiClient client.APIClient, stack strin
 	}
 
 	for _, vol := range svc.Volumes {
-		m := mount.Mount{
-			Source:   vol.Source,
-			Target:   vol.Target,
-			Type:     mount.Type(vol.Type),
-			ReadOnly: vol.ReadOnly,
+		m, err := convertVolumeToMount(vol, volumes, stack)
+		if err != nil {
+			return swarm.ServiceSpec{}, fmt.Errorf("volume %s: %w", vol.Source, err)
 		}
 		containerSpec.Mounts = append(containerSpec.Mounts, m)
 	}
@@ -373,12 +415,17 @@ func convertService(ctx context.Context, apiClient client.APIClient, stack strin
 		})
 	} else {
 		for netName, netConfig := range svc.Networks {
-			target := ScopeName(stack, netName)
-			if net, ok := networks[netName]; ok && net.Name != "" {
-				target = net.Name
+			networkConfig, ok := networks[netName]
+			if !ok && netName != "default" {
+				return swarm.ServiceSpec{}, fmt.Errorf("undefined network %q", netName)
 			}
-			if net, ok := networks[netName]; ok && bool(net.External) {
-				target = net.Name
+
+			target := ScopeName(stack, netName)
+			if networkConfig.Name != "" {
+				target = networkConfig.Name
+			}
+			if bool(networkConfig.External) {
+				target = networkConfig.Name
 				if target == "" {
 					target = netName
 				}
@@ -828,5 +875,175 @@ func AddStackLabel(stack string, labels types.Labels) map[string]string {
 	maps.Copy(result, labels)
 	result[LabelNamespace] = stack
 	return result
+}
+
+func convertVolumeToMount(vol types.ServiceVolumeConfig, volumes types.Volumes, stack string) (mount.Mount, error) {
+	m := mount.Mount{
+		Type:        mount.Type(vol.Type),
+		Target:      vol.Target,
+		ReadOnly:    vol.ReadOnly,
+		Source:      vol.Source,
+		Consistency: mount.Consistency(vol.Consistency),
+	}
+
+	switch vol.Type {
+	case "bind":
+		if vol.Bind != nil {
+			m.BindOptions = &mount.BindOptions{
+				Propagation: mount.Propagation(vol.Bind.Propagation),
+			}
+		}
+		return m, nil
+	case "tmpfs":
+		if vol.Tmpfs != nil {
+			m.TmpfsOptions = &mount.TmpfsOptions{
+				SizeBytes: int64(vol.Tmpfs.Size),
+			}
+		}
+		return m, nil
+	case "npipe":
+		if vol.Bind != nil {
+			m.BindOptions = &mount.BindOptions{
+				Propagation: mount.Propagation(vol.Bind.Propagation),
+			}
+		}
+		return m, nil
+	case "image":
+		if vol.Image != nil {
+			m.ImageOptions = &mount.ImageOptions{
+				Subpath: vol.Image.SubPath,
+			}
+		}
+		return m, nil
+	case "cluster":
+		return handleClusterVolume(vol, volumes, stack)
+	case "volume", "":
+		// Handle named volumes below
+	default:
+		return mount.Mount{}, fmt.Errorf("unsupported volume type: %s", vol.Type)
+	}
+
+	// Anonymous volumes
+	if vol.Source == "" {
+		return m, nil
+	}
+
+	stackVolume, exists := volumes[vol.Source]
+	if !exists {
+		return mount.Mount{}, fmt.Errorf("undefined volume %q", vol.Source)
+	}
+
+	m.Source = ScopeName(stack, vol.Source)
+	m.VolumeOptions = &mount.VolumeOptions{}
+
+	if vol.Volume != nil {
+		m.VolumeOptions.NoCopy = vol.Volume.NoCopy
+		m.VolumeOptions.Subpath = vol.Volume.Subpath
+	}
+
+	if stackVolume.Name != "" {
+		m.Source = stackVolume.Name
+	}
+
+	// External named volumes
+	if bool(stackVolume.External) {
+		return m, nil
+	}
+
+	m.VolumeOptions.Labels = AddStackLabel(stack, stackVolume.Labels)
+	if stackVolume.Driver != "" || stackVolume.DriverOpts != nil {
+		m.VolumeOptions.DriverConfig = &mount.Driver{
+			Name:    stackVolume.Driver,
+			Options: stackVolume.DriverOpts,
+		}
+	}
+
+	return m, nil
+}
+
+func handleClusterVolume(vol types.ServiceVolumeConfig, volumes types.Volumes, stack string) (mount.Mount, error) {
+	m := mount.Mount{
+		Type:           mount.Type(vol.Type),
+		Target:         vol.Target,
+		ReadOnly:       vol.ReadOnly,
+		Source:         vol.Source,
+		ClusterOptions: &mount.ClusterOptions{},
+	}
+
+	// Volume groups (prefixed with "group:") are not namespaced
+	if strings.HasPrefix(vol.Source, "group:") {
+		return m, nil
+	}
+
+	stackVolume, exists := volumes[vol.Source]
+	if !exists {
+		return mount.Mount{}, fmt.Errorf("undefined volume %q", vol.Source)
+	}
+
+	if stackVolume.Name != "" {
+		m.Source = stackVolume.Name
+	} else {
+		m.Source = ScopeName(stack, vol.Source)
+	}
+
+	return m, nil
+}
+
+func convertCredentialSpec(ctx context.Context, apiClient client.APIClient, stack string, spec types.CredentialSpecConfig, configs types.Configs) (*swarm.CredentialSpec, *swarm.ConfigReference, error) {
+	if spec.Config == "" && spec.File == "" && spec.Registry == "" {
+		return nil, nil, nil
+	}
+
+	// Validate only one source is specified
+	var sources []string
+	if spec.Config != "" {
+		sources = append(sources, "Config")
+	}
+	if spec.File != "" {
+		sources = append(sources, "File")
+	}
+	if spec.Registry != "" {
+		sources = append(sources, "Registry")
+	}
+	if len(sources) > 1 {
+		return nil, nil, fmt.Errorf("invalid credential spec: cannot specify both %s", strings.Join(sources, " and "))
+	}
+
+	credSpec := &swarm.CredentialSpec{
+		File:     spec.File,
+		Registry: spec.Registry,
+	}
+
+	if spec.Config == "" {
+		return credSpec, nil, nil
+	}
+
+	config, ok := configs[spec.Config]
+	if !ok {
+		return nil, nil, fmt.Errorf("credential spec config %q not found", spec.Config)
+	}
+
+	configName := ScopeName(stack, spec.Config)
+	if config.Name != "" {
+		configName = config.Name
+	} else if config.External {
+		configName = spec.Config
+	}
+
+	configID, err := lookupConfigID(ctx, apiClient, configName)
+	if err != nil {
+		return nil, nil, fmt.Errorf("credential spec config %s: %w", configName, err)
+	}
+
+	credSpec.Config = configID
+
+	// Docker CLI adds a Runtime-type config reference for CredentialSpec configs
+	configRef := &swarm.ConfigReference{
+		ConfigID:   configID,
+		ConfigName: configName,
+		Runtime:    &swarm.ConfigReferenceRuntimeTarget{},
+	}
+
+	return credSpec, configRef, nil
 }
 
