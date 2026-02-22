@@ -45,7 +45,7 @@ func Deploy(ctx context.Context, dockerClient client.APIClient, project types.Pr
 		return fmt.Errorf("failed to process local configs: %w", err)
 	}
 
-	if err := processSensitiveSecrets(&project, opts.Secrets); err != nil {
+	if err := processSensitiveSecrets(&project, opts.Secrets, opts.Cwd); err != nil {
 		return fmt.Errorf("failed to process sensitive secrets: %w", err)
 	}
 
@@ -377,14 +377,14 @@ func processLocalConfigs(project *types.Project, cwd string) error {
 	return nil
 }
 
-func processSensitiveSecrets(project *types.Project, allSecrets vault.Secrets) error {
+func processSensitiveSecrets(project *types.Project, allSecrets vault.Secrets, cwd string) error {
 	if project.Secrets == nil {
 		project.Secrets = make(types.Secrets)
 	}
 
 	for svcName, svc := range project.Services {
 		for name, sensitive := range svc.Sensitive {
-			content, err := vault.FormatSecretsForSensitive(allSecrets, sensitive.Secrets, sensitive.Format)
+			content, err := formatSensitiveSecrets(allSecrets, sensitive, cwd)
 			if err != nil {
 				return fmt.Errorf("failed to format sensitive secrets for service %s target %s: %w", svc.Name, sensitive.Target, err)
 			}
@@ -406,4 +406,30 @@ func processSensitiveSecrets(project *types.Project, allSecrets vault.Secrets) e
 	}
 
 	return nil
+}
+
+func formatSensitiveSecrets(allSecrets vault.Secrets, sensitive types.SensitiveConfig, cwd string) ([]byte, error) {
+	switch sensitive.Format {
+	case vault.SecretOutputEnv, "":
+		return vault.FormatEnv(allSecrets, sensitive.Secrets)
+	case vault.SecretOutputJSON:
+		return vault.FormatJSON(allSecrets, sensitive.Secrets)
+	case vault.SecretOutputRaw:
+		return vault.FormatRaw(allSecrets, sensitive.Secrets)
+	case vault.SecretOutputTemplate:
+		templatePath := sensitive.Template
+		if templatePath == "" {
+			return nil, fmt.Errorf("template format requires template path")
+		}
+		if !filepath.IsAbs(templatePath) {
+			templatePath = filepath.Join(cwd, templatePath)
+		}
+		data, err := os.ReadFile(templatePath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read template file %s: %w", sensitive.Template, err)
+		}
+		return vault.FormatTemplate(allSecrets, sensitive.Secrets, string(data))
+	default:
+		return nil, fmt.Errorf("unknown format: %s", sensitive.Format)
+	}
 }

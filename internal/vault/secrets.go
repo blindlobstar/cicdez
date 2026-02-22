@@ -1,10 +1,12 @@
 package vault
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"sort"
+	"text/template"
 
 	"github.com/compose-spec/compose-go/v2/types"
 	"gopkg.in/yaml.v3"
@@ -45,34 +47,13 @@ func SaveSecrets(path string, secrets Secrets) error {
 }
 
 const (
-	SecretOutputEnv  = "env"
-	SecretOutputJSON = "json"
-	SecretOutputRaw  = "raw"
+	SecretOutputEnv      = "env"
+	SecretOutputJSON     = "json"
+	SecretOutputRaw      = "raw"
+	SecretOutputTemplate = "template"
 )
 
-func FormatEnv(secrets map[string]string) []byte {
-	keys := make([]string, 0, len(secrets))
-	for k := range secrets {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-
-	var result []byte
-	for _, k := range keys {
-		result = append(result, []byte(k+"="+secrets[k]+"\n")...)
-	}
-	return result
-}
-
-func FormatJSON(secrets map[string]string) ([]byte, error) {
-	return json.Marshal(secrets)
-}
-
-func FormatRaw(value string) []byte {
-	return []byte(value)
-}
-
-func FormatSecretsForSensitive(allSecrets Secrets, needed []types.SensitiveSecret, format string) ([]byte, error) {
+func pickSecrets(allSecrets Secrets, needed []types.SensitiveSecret) (map[string]string, error) {
 	if len(needed) == 0 {
 		return nil, fmt.Errorf("no secrets specified for sensitive config")
 	}
@@ -90,19 +71,65 @@ func FormatSecretsForSensitive(allSecrets Secrets, needed []types.SensitiveSecre
 		picked[outputName] = value
 	}
 
-	switch format {
-	case SecretOutputEnv, "":
-		return FormatEnv(picked), nil
-	case SecretOutputJSON:
-		return FormatJSON(picked)
-	case SecretOutputRaw:
-		if len(picked) != 1 {
-			return nil, fmt.Errorf("raw format requires exactly one secret, got %d", len(picked))
-		}
-		for _, v := range picked {
-			return FormatRaw(v), nil
-		}
+	return picked, nil
+}
+
+func FormatEnv(allSecrets Secrets, needed []types.SensitiveSecret) ([]byte, error) {
+	picked, err := pickSecrets(allSecrets, needed)
+	if err != nil {
+		return nil, err
 	}
 
-	return nil, fmt.Errorf("unknown format: %s", format)
+	keys := make([]string, 0, len(picked))
+	for k := range picked {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	var result []byte
+	for _, k := range keys {
+		result = append(result, []byte(k+"="+picked[k]+"\n")...)
+	}
+	return result, nil
+}
+
+func FormatJSON(allSecrets Secrets, needed []types.SensitiveSecret) ([]byte, error) {
+	picked, err := pickSecrets(allSecrets, needed)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(picked)
+}
+
+func FormatRaw(allSecrets Secrets, needed []types.SensitiveSecret) ([]byte, error) {
+	picked, err := pickSecrets(allSecrets, needed)
+	if err != nil {
+		return nil, err
+	}
+	if len(picked) != 1 {
+		return nil, fmt.Errorf("raw format requires exactly one secret, got %d", len(picked))
+	}
+	for _, v := range picked {
+		return []byte(v), nil
+	}
+	return nil, nil
+}
+
+func FormatTemplate(allSecrets Secrets, needed []types.SensitiveSecret, templateContent string) ([]byte, error) {
+	picked, err := pickSecrets(allSecrets, needed)
+	if err != nil {
+		return nil, err
+	}
+
+	tmpl, err := template.New("sensitive").Parse(templateContent)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse template: %w", err)
+	}
+
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, picked); err != nil {
+		return nil, fmt.Errorf("failed to execute template: %w", err)
+	}
+
+	return buf.Bytes(), nil
 }

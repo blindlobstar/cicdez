@@ -55,7 +55,34 @@ services:
         format: env
 ```
 
-Formats: `env` (default), `json`, `raw`.
+**Formats:**
+
+- `env` (default) - Key=value pairs, one per line
+- `json` - JSON object
+- `raw` - Single secret value (requires exactly one secret)
+- `template` - Render secrets into a [Go template](https://pkg.go.dev/text/template) file
+
+**Template example:**
+
+```yaml
+sensitive:
+  app-config:
+    target: /app/config.yaml
+    format: template
+    template: ./templates/config.yaml.tmpl
+    secrets:
+      - source: db_password
+        name: db_pass
+      - source: api_key
+```
+
+Template file (`./templates/config.yaml.tmpl`):
+```yaml
+database:
+  password: {{ .db_pass }}
+api:
+  key: {{ .api_key }}
+```
 
 ### local_configs
 

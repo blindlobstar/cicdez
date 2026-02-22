@@ -32,6 +32,14 @@ services:
         secrets:
           - source: jwt_secret
             name: jwt_secret
+      app_config:
+        target: /app/config.yaml
+        format: template
+        template: ./templates/config.yaml.tmpl
+        secrets:
+          - source: db_password
+            name: db_pass
+          - source: api_key
     local_configs:
       nginx_conf:
         source: ./configs/nginx.conf

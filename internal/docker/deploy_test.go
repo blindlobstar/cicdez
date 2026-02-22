@@ -31,7 +31,7 @@ func TestProcessSensitiveSecrets_ExplicitTarget(t *testing.T) {
 		},
 	}
 
-	err := processSensitiveSecrets(&project, secrets)
+	err := processSensitiveSecrets(&project, secrets, "")
 	if err != nil {
 		t.Fatalf("processSensitiveSecrets failed: %v", err)
 	}

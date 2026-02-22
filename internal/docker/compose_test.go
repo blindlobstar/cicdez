@@ -55,8 +55,19 @@ func TestComposeParser(t *testing.T) {
 					t.Errorf("expected first command 'npm ci', got '%s'", job.Commands[0].Command)
 				}
 
-				if len(webService.Sensitive) != 2 {
-					t.Fatalf("expected 2 sensitive configs, got %d", len(webService.Sensitive))
+				if len(webService.Sensitive) != 3 {
+					t.Fatalf("expected 3 sensitive configs, got %d", len(webService.Sensitive))
+				}
+
+				templateConfig, ok := webService.Sensitive["app_config"]
+				if !ok {
+					t.Fatal("app_config sensitive config not found")
+				}
+				if templateConfig.Format != "template" {
+					t.Errorf("expected format 'template', got '%s'", templateConfig.Format)
+				}
+				if templateConfig.Template != "./templates/config.yaml.tmpl" {
+					t.Errorf("expected template './templates/config.yaml.tmpl', got '%s'", templateConfig.Template)
 				}
 
 				envConfig, ok := webService.Sensitive["app_env"]
