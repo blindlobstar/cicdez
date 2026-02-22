@@ -26,9 +26,7 @@ func TestProcessSensitiveSecrets_ExplicitTarget(t *testing.T) {
 	}
 
 	secrets := vault.Secrets{
-		Values: map[string]string{
-			"db_password": "secret123",
-		},
+		"db_password": "secret123",
 	}
 
 	err := processSensitiveSecrets(&project, secrets, "")

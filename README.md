@@ -35,6 +35,27 @@ cicdez secret add DB_PASSWORD
 cicdez deploy
 ```
 
+## Encryption Key
+
+Secrets are encrypted using [age](https://github.com/FiloSottile/age). The key is stored at:
+
+```
+~/.config/cicdez/age.key
+```
+
+Override with `CICDEZ_AGE_KEY_FILE` environment variable or `--output` flag when generating.
+
+## Secrets Format
+
+Secrets are stored as flat YAML key-value pairs:
+
+```yaml
+DB_PASSWORD: secret123
+API_KEY: mykey
+```
+
+Nested structures are not supported. Use `cicdez secret edit` to modify secrets directly.
+
 ## Compose Extensions
 
 ### sensitive

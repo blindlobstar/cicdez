@@ -3,6 +3,7 @@ package vault
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -14,20 +15,32 @@ import (
 
 var secretsPath = filepath.Join(Dir, "secrets.age")
 
-type Secrets struct {
-	Values map[string]string `yaml:"values"`
-}
+var ErrNestedSecret = errors.New("nested values not supported")
+
+type Secrets map[string]string
 
 func LoadSecrets(path string) (Secrets, error) {
-	var secrets Secrets
-
 	data, err := DecryptFile(filepath.Join(path, secretsPath))
 	if err != nil {
-		return secrets, fmt.Errorf("failed to decrypt secrets: %w", err)
+		return nil, fmt.Errorf("failed to decrypt secrets: %w", err)
 	}
 
-	if err := yaml.Unmarshal(data, &secrets); err != nil {
-		return secrets, fmt.Errorf("failed to parse secrets: %w", err)
+	return ParseSecrets(data)
+}
+
+func ParseSecrets(data []byte) (Secrets, error) {
+	var raw map[string]any
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return nil, fmt.Errorf("failed to parse secrets: %w", err)
+	}
+
+	secrets := make(Secrets, len(raw))
+	for key, value := range raw {
+		str, ok := value.(string)
+		if !ok {
+			return nil, fmt.Errorf("%w: found nested structure at key %q", ErrNestedSecret, key)
+		}
+		secrets[key] = str
 	}
 
 	return secrets, nil
@@ -60,7 +73,7 @@ func pickSecrets(allSecrets Secrets, needed []types.SensitiveSecret) (map[string
 
 	picked := make(map[string]string, len(needed))
 	for _, s := range needed {
-		value, ok := allSecrets.Values[s.Source]
+		value, ok := allSecrets[s.Source]
 		if !ok {
 			return nil, fmt.Errorf("secret %q not found in cicdez secrets", s.Source)
 		}

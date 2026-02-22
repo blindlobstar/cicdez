@@ -51,8 +51,8 @@ func TestSecretAdd(t *testing.T) {
 		t.Fatalf("LoadSecrets failed: %v", err)
 	}
 
-	if secrets.Values["DB_PASSWORD"] != "secret123" {
-		t.Errorf("expected DB_PASSWORD to be 'secret123', got '%s'", secrets.Values["DB_PASSWORD"])
+	if secrets["DB_PASSWORD"] != "secret123" {
+		t.Errorf("expected DB_PASSWORD to be 'secret123', got '%s'", secrets["DB_PASSWORD"])
 	}
 
 	output := buf.String()
@@ -88,8 +88,8 @@ func TestSecretAddUpdate(t *testing.T) {
 		t.Fatalf("LoadSecrets failed: %v", err)
 	}
 
-	if secrets.Values["API_KEY"] != "updated_value" {
-		t.Errorf("expected API_KEY to be 'updated_value', got '%s'", secrets.Values["API_KEY"])
+	if secrets["API_KEY"] != "updated_value" {
+		t.Errorf("expected API_KEY to be 'updated_value', got '%s'", secrets["API_KEY"])
 	}
 }
 
@@ -178,7 +178,7 @@ func TestSecretRemove(t *testing.T) {
 		t.Fatalf("LoadSecrets failed: %v", err)
 	}
 
-	if _, exists := secrets.Values["TEMP_SECRET"]; exists {
+	if _, exists := secrets["TEMP_SECRET"]; exists {
 		t.Error("expected TEMP_SECRET to be removed, but it still exists")
 	}
 

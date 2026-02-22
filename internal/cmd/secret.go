@@ -88,11 +88,11 @@ func runSecretAdd(out io.Writer, opts secretAddOptions) error {
 		return fmt.Errorf("failed to load secrets: %w", err)
 	}
 
-	if secrets.Values == nil {
-		secrets.Values = make(map[string]string)
+	if secrets == nil {
+		secrets = make(vault.Secrets)
 	}
 
-	secrets.Values[opts.name] = opts.value
+	secrets[opts.name] = opts.value
 
 	if err := vault.SaveSecrets(cwd, secrets); err != nil {
 		return fmt.Errorf("failed to save secrets: %w", err)
@@ -113,13 +113,13 @@ func runSecretList(out io.Writer) error {
 		return fmt.Errorf("failed to load secrets: %w", err)
 	}
 
-	if len(secrets.Values) == 0 {
+	if len(secrets) == 0 {
 		fmt.Fprintln(out, "No secrets found")
 		return nil
 	}
 
-	names := make([]string, 0, len(secrets.Values))
-	for name := range secrets.Values {
+	names := make([]string, 0, len(secrets))
+	for name := range secrets {
 		names = append(names, name)
 	}
 	sort.Strings(names)
@@ -180,8 +180,8 @@ func runSecretEdit(out io.Writer) error {
 		return fmt.Errorf("failed to read edited file: %w", err)
 	}
 
-	var editedSecrets vault.Secrets
-	if err := yaml.Unmarshal(editedData, &editedSecrets); err != nil {
+	editedSecrets, err := vault.ParseSecrets(editedData)
+	if err != nil {
 		return fmt.Errorf("failed to parse edited secrets: %w", err)
 	}
 
@@ -204,11 +204,11 @@ func runSecretRemove(out io.Writer, opts secretRemoveOptions) error {
 		return fmt.Errorf("failed to load secrets: %w", err)
 	}
 
-	if _, exists := secrets.Values[opts.name]; !exists {
+	if _, exists := secrets[opts.name]; !exists {
 		return fmt.Errorf("secret '%s' not found", opts.name)
 	}
 
-	delete(secrets.Values, opts.name)
+	delete(secrets, opts.name)
 
 	if err := vault.SaveSecrets(cwd, secrets); err != nil {
 		return fmt.Errorf("failed to save secrets: %w", err)
