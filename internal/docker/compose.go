@@ -33,6 +33,7 @@ func LoadCompose(ctx context.Context, paths ...string) (types.Project, error) {
 		cli.WithOsEnv,
 		cli.WithDotEnv,
 		cli.WithInterpolation(true),
+		cli.WithResolvedPaths(true),
 	)
 	if err != nil {
 		return types.Project{}, fmt.Errorf("failed to create project options: %w", err)

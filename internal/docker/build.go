@@ -87,8 +87,12 @@ func buildImage(ctx context.Context, dockerClient client.APIClient, imageName st
 	if dockerfile == "" {
 		dockerfile = "Dockerfile"
 	}
+	if _, err := os.Stat(filepath.Join(buildContext, dockerfile)); err != nil {
+		return fmt.Errorf("cannot locate Dockerfile: %s", dockerfile)
+	}
 
 	excludePatterns := readIgnorePatterns(buildContext)
+	excludePatterns = append(excludePatterns, "!"+dockerfile)
 
 	buildContextReader, err := archive.TarWithOptions(buildContext, &archive.TarOptions{
 		ExcludePatterns: excludePatterns,
@@ -189,3 +193,4 @@ func PushImage(ctx context.Context, dockerClient client.APIClient, imageName str
 
 	return jsonmessage.DisplayJSONMessagesStream(resp, os.Stdout, os.Stdout.Fd(), true, nil)
 }
+
