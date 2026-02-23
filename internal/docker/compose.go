@@ -27,12 +27,11 @@ const (
 	DefaultNetworkDriver = "overlay"
 )
 
-func LoadCompose(ctx context.Context, env []string, paths ...string) (types.Project, error) {
+func LoadCompose(ctx context.Context, paths ...string) (types.Project, error) {
 	projectOptions, err := cli.NewProjectOptions(
 		paths,
 		cli.WithOsEnv,
 		cli.WithDotEnv,
-		cli.WithEnv(env),
 		cli.WithInterpolation(true),
 	)
 	if err != nil {

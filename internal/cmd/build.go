@@ -43,7 +43,7 @@ func runBuild(ctx context.Context, out io.Writer, opts buildOptions) error {
 		return fmt.Errorf("failed to get current directory: %w", err)
 	}
 
-	project, err := docker.LoadCompose(ctx, nil, opts.composeFile)
+	project, err := docker.LoadCompose(ctx, opts.composeFile)
 	if err != nil {
 		return fmt.Errorf("failed to load compose file: %w", err)
 	}

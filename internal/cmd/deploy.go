@@ -34,7 +34,7 @@ func NewDeployCommand() *cobra.Command {
 Images are built and pushed automatically unless --no-build is specified.
 Secrets are decrypted and injected during deployment.
 Stack name defaults to the project name from the compose file.`,
-		Args:  cobra.MaximumNArgs(1),
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) > 0 {
 				opts.stack = args[0]
@@ -64,7 +64,7 @@ func runDeploy(ctx context.Context, out io.Writer, opts deployOptions) error {
 		return err
 	}
 
-	project, err := docker.LoadCompose(ctx, os.Environ(), opts.composeFiles...)
+	project, err := docker.LoadCompose(ctx, opts.composeFiles...)
 	if err != nil {
 		return err
 	}

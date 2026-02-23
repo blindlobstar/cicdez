@@ -171,7 +171,7 @@ func TestComposeParser(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			project, err := LoadCompose(ctx, []string{}, tt.files...)
+			project, err := LoadCompose(ctx, tt.files...)
 			if err != nil {
 				t.Fatalf("LoadCompose failed: %v", err)
 			}
