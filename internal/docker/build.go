@@ -117,6 +117,7 @@ func buildImage(ctx context.Context, dockerClient client.APIClient, imageName st
 		CacheFrom:   build.CacheFrom,
 		NetworkMode: build.Network,
 		ShmSize:     int64(build.ShmSize),
+		AuthConfigs: opt.Registries,
 	}
 
 	if len(build.ExtraHosts) > 0 {
