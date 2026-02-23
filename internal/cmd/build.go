@@ -13,11 +13,11 @@ import (
 )
 
 type buildOptions struct {
-	composeFile string
-	services    []string
-	noCache     bool
-	pull        bool
-	push        bool
+	composeFiles []string
+	services     []string
+	noCache      bool
+	pull         bool
+	push         bool
 }
 
 func NewBuildCommand() *cobra.Command {
@@ -30,7 +30,7 @@ func NewBuildCommand() *cobra.Command {
 			return runBuild(cmd.Context(), cmd.OutOrStdout(), opts)
 		},
 	}
-	cmd.Flags().StringVarP(&opts.composeFile, "file", "f", "compose.yaml", "compose file path")
+	cmd.Flags().StringArrayVarP(&opts.composeFiles, "file", "f", []string{"compose.yaml"}, "compose file path(s)")
 	cmd.Flags().BoolVar(&opts.noCache, "no-cache", false, "do not use cache when building")
 	cmd.Flags().BoolVar(&opts.pull, "pull", false, "pull newer versions of base images")
 	cmd.Flags().BoolVar(&opts.push, "push", false, "push images after build")
@@ -43,7 +43,7 @@ func runBuild(ctx context.Context, out io.Writer, opts buildOptions) error {
 		return fmt.Errorf("failed to get current directory: %w", err)
 	}
 
-	project, err := docker.LoadCompose(ctx, opts.composeFile)
+	project, err := docker.LoadCompose(ctx, opts.composeFiles...)
 	if err != nil {
 		return fmt.Errorf("failed to load compose file: %w", err)
 	}
