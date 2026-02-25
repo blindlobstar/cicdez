@@ -124,9 +124,8 @@ func runSecretList(out io.Writer) error {
 	}
 	sort.Strings(names)
 
-	fmt.Fprintln(out, "Secrets:")
 	for _, name := range names {
-		fmt.Fprintf(out, "  %s\n", name)
+		fmt.Fprintln(out, name)
 	}
 
 	return nil

@@ -123,9 +123,6 @@ func TestSecretList(t *testing.T) {
 	}
 
 	output := buf.String()
-	if !strings.Contains(output, "Secrets:") {
-		t.Errorf("expected output to contain 'Secrets:', got: %s", output)
-	}
 	for name := range secrets {
 		if !strings.Contains(output, name) {
 			t.Errorf("expected output to contain '%s', got: %s", name, output)
