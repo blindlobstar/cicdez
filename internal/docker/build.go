@@ -12,6 +12,7 @@ import (
 	"github.com/compose-spec/compose-go/v2/types"
 	"github.com/containerd/platforms"
 	"github.com/distribution/reference"
+	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/go-archive"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/registry"
@@ -31,6 +32,17 @@ type BuildOptions struct {
 }
 
 func Build(ctx context.Context, dockerClient client.APIClient, project types.Project, opt BuildOptions) error {
+	var bkClient *bkclient.Client
+	if hasBuildKitSupport(ctx, dockerClient) {
+		var err error
+		bkClient, err = newBuildKitClient(ctx, dockerClient)
+		if err != nil {
+			bkClient = nil
+		} else {
+			defer bkClient.Close()
+		}
+	}
+
 	for _, svc := range project.Services {
 		if len(opt.Services) > 0 && !opt.Services[svc.Name] {
 			continue
@@ -47,15 +59,19 @@ func Build(ctx context.Context, dockerClient client.APIClient, project types.Pro
 
 		fmt.Fprintf(opt.Out, "Building %s...\n", imageName)
 
-		if err := buildImage(ctx, dockerClient, imageName, svc.Build, svc.Platform, project.WorkingDir, opt); err != nil {
-			return fmt.Errorf("failed to build %s: %w", svc.Name, err)
+		var err error
+		if bkClient != nil {
+			err = buildImageWithBuildKit(ctx, bkClient, imageName, svc.Build, project.WorkingDir, opt)
+		} else {
+			err = buildImage(ctx, dockerClient, imageName, svc.Build, project.WorkingDir, opt)
+		}
+		if err == nil && opt.Push {
+			fmt.Fprintf(opt.Out, "Pushing %s...\n", imageName)
+			err = PushImage(ctx, dockerClient, imageName, opt.Registries)
 		}
 
-		if opt.Push {
-			fmt.Fprintf(opt.Out, "Pushing %s...\n", imageName)
-			if err := PushImage(ctx, dockerClient, imageName, opt.Registries); err != nil {
-				return fmt.Errorf("failed to push %s: %w", svc.Name, err)
-			}
+		if err != nil {
+			return fmt.Errorf("failed to build %s: %w", svc.Name, err)
 		}
 	}
 
@@ -73,7 +89,7 @@ func readIgnorePatterns(buildContext string) []string {
 	return patterns
 }
 
-func buildImage(ctx context.Context, dockerClient client.APIClient, imageName string, build *types.BuildConfig, platform string, projectDir string, opt BuildOptions) error {
+func buildImage(ctx context.Context, dockerClient client.APIClient, imageName string, build *types.BuildConfig, projectDir string, opt BuildOptions) error {
 	buildContext := build.Context
 	if buildContext == "" {
 		buildContext = "."
@@ -148,12 +164,6 @@ func buildImage(ctx context.Context, dockerClient client.APIClient, imageName st
 			}
 			opts.Platforms = append(opts.Platforms, p)
 		}
-	} else if platform != "" {
-		p, err := platforms.Parse(platform)
-		if err != nil {
-			return fmt.Errorf("invalid platform %q: %w", platform, err)
-		}
-		opts.Platforms = []ocispec.Platform{p}
 	}
 
 	resp, err := dockerClient.ImageBuild(ctx, buildContextReader, opts)
@@ -194,4 +204,3 @@ func PushImage(ctx context.Context, dockerClient client.APIClient, imageName str
 
 	return jsonmessage.DisplayJSONMessagesStream(resp, os.Stdout, os.Stdout.Fd(), true, nil)
 }
-
