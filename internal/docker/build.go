@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/compose-spec/compose-go/v2/types"
 	"github.com/containerd/platforms"
@@ -50,6 +51,10 @@ func Build(ctx context.Context, dockerClient client.APIClient, project types.Pro
 
 		if svc.Build == nil {
 			continue
+		}
+
+		if svc.Platform != "" && !slices.Contains(svc.Build.Platforms, svc.Platform) {
+			svc.Build.Platforms = append(svc.Build.Platforms, svc.Platform)
 		}
 
 		imageName := svc.Image
