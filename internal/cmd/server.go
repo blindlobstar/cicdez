@@ -291,14 +291,20 @@ func runServerInit(in *os.File, out io.Writer, opts serverInitOptions) error {
 
 	fmt.Fprintf(out, "Connecting to %s@%s:%d...\n", opts.user, opts.host, opts.port)
 	if opts.rootKey != "" {
-		client, err = ssh.DialWithKey(opts.host, opts.port, opts.user, opts.rootKey)
+		keyData, err := os.ReadFile(opts.rootKey)
+		if err != nil {
+			return fmt.Errorf("failed to read key file: %w", err)
+		}
+		client, err = ssh.DialWithKey(opts.host, opts.port, opts.user, keyData)
 	} else {
 		fmt.Fprintf(out, "Enter password for %s: ", opts.user)
-		var password string
-		password, err = readPassword(in)
+
+		passwordBytes, err := term.ReadPassword(int(in.Fd()))
 		if err != nil {
 			return fmt.Errorf("failed to read password: %w", err)
 		}
+		password := string(passwordBytes)
+
 		client, err = ssh.DialWithPassword(opts.host, opts.port, opts.user, password)
 
 	}
@@ -366,7 +372,9 @@ func runServerInit(in *os.File, out io.Writer, opts serverInitOptions) error {
 	server := config.Servers[opts.name]
 	server.Host = opts.host
 	server.Port = opts.port
-	server.Key = ""
+	if server.User != opts.deployerUser {
+		server.Key = ""
+	}
 	server.User = opts.deployerUser
 
 	_, stderr, err = ssh.Run(client, fmt.Sprintf("id %s", server.User), false)
@@ -444,14 +452,6 @@ func runServerInit(in *os.File, out io.Writer, opts serverInitOptions) error {
 	}
 
 	return nil
-}
-
-func readPassword(in *os.File) (string, error) {
-	passwordBytes, err := term.ReadPassword(int(in.Fd()))
-	if err != nil {
-		return "", err
-	}
-	return string(passwordBytes), nil
 }
 
 func ensureAuthorizedKey(client *gossh.Client, sudo bool, user, pubKey string) error {

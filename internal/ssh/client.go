@@ -3,7 +3,6 @@ package ssh
 import (
 	"bytes"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -12,16 +11,7 @@ import (
 
 const defaultTimeout = 30 * time.Second
 
-func DialWithKey(host string, port int, user string, keyPath string) (*ssh.Client, error) {
-	keyData, err := os.ReadFile(keyPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read key file: %w", err)
-	}
-
-	return DialWithKeyData(host, port, user, keyData)
-}
-
-func DialWithKeyData(host string, port int, user string, keyData []byte) (*ssh.Client, error) {
+func DialWithKey(host string, port int, user string, keyData []byte) (*ssh.Client, error) {
 	signer, err := ssh.ParsePrivateKey(keyData)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse private key: %w", err)
@@ -36,13 +26,7 @@ func DialWithKeyData(host string, port int, user string, keyData []byte) (*ssh.C
 		Timeout:         defaultTimeout,
 	}
 
-	addr := fmt.Sprintf("%s:%d", host, port)
-	client, err := ssh.Dial("tcp", addr, config)
-	if err != nil {
-		return nil, fmt.Errorf("failed to dial %s: %w", addr, err)
-	}
-
-	return client, nil
+	return dial(host, port, config)
 }
 
 func DialWithPassword(host string, port int, user, password string) (*ssh.Client, error) {
@@ -62,6 +46,13 @@ func DialWithPassword(host string, port int, user, password string) (*ssh.Client
 		Timeout:         defaultTimeout,
 	}
 
+	return dial(host, port, config)
+}
+
+func dial(host string, port int, config *ssh.ClientConfig) (*ssh.Client, error) {
+	if port == 0 {
+		port = 22
+	}
 	addr := fmt.Sprintf("%s:%d", host, port)
 	client, err := ssh.Dial("tcp", addr, config)
 	if err != nil {
