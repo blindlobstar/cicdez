@@ -2,7 +2,6 @@ package ssh
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -72,10 +71,10 @@ func DialWithPassword(host string, port int, user, password string) (*ssh.Client
 	return client, nil
 }
 
-func Run(client *ssh.Client, cmd string, sudo bool) (string, error) {
+func Run(client *ssh.Client, cmd string, sudo bool) (string, string, error) {
 	session, err := client.NewSession()
 	if err != nil {
-		return "", fmt.Errorf("failed to create session: %w", err)
+		return "", "", fmt.Errorf("failed to create session: %w", err)
 	}
 	defer session.Close()
 
@@ -92,11 +91,8 @@ func Run(client *ssh.Client, cmd string, sudo bool) (string, error) {
 	stderr := strings.TrimSpace(stderrBuf.String())
 
 	if err != nil {
-		return stdout, fmt.Errorf("%w: %s", err, stderr)
-	}
-	if stderr != "" {
-		return stdout, errors.New(stderr)
+		return stdout, stderr, fmt.Errorf("%w: %s", err, stderr)
 	}
 
-	return stdout, nil
+	return stdout, stderr, nil
 }
