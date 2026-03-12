@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -324,32 +325,30 @@ func runServerInit(in *os.File, out io.Writer, opts serverInitOptions) error {
 		}
 	}
 
-	_, err = ssh.Run(client, "docker --version", sudo)
+	stdout, _, err := ssh.Run(client, "docker --version", sudo)
 	if err != nil {
+		return err
+	}
+	if stdout == "" {
 		fmt.Fprintln(out, "Installing Docker...")
 		if !opts.dryRun {
-			_, err := ssh.Run(client, "curl -fsSL https://get.docker.com | sh && systemctl enable docker.service && systemctl enable containerd.service", sudo)
-			if err != nil {
-				return fmt.Errorf("failed to install docker: %w", err)
+			_, stderr, err := ssh.Run(client, "curl -fsSL https://get.docker.com | sh && systemctl enable docker.service && systemctl enable containerd.service", sudo)
+			if err != nil || stderr != "" {
+				return errors.New(strings.Join([]string{err.Error(), stderr}, "\n"))
 			}
 		}
 	}
 
-	stdout, err := ssh.Run(client, "docker info --format '{{.Swarm.LocalNodeState}}'", sudo)
-	if err != nil || strings.TrimSpace(stdout) != "active" {
+	stdout, stderr, err := ssh.Run(client, "docker info --format '{{.Swarm.LocalNodeState}}'", sudo)
+	if err != nil || stderr != "" {
+		return errors.New(strings.Join([]string{err.Error(), stderr}, "\n"))
+	}
+	if stdout != "active" {
 		fmt.Fprintln(out, "Initializing Docker Swarm...")
 		if !opts.dryRun {
-			stdout, err := ssh.Run(client, "hostname -I | awk '{print $1}'", false)
-			if err != nil {
-				return fmt.Errorf("failed to get IP address: %w", err)
-			}
-			ip := strings.TrimSpace(stdout)
-			if ip == "" {
-				return fmt.Errorf("could not determine server IP address")
-			}
-			_, err = ssh.Run(client, fmt.Sprintf("docker swarm init --advertise-addr %s", ip), sudo)
-			if err != nil {
-				return fmt.Errorf("failed to init swarm: %w", err)
+			_, stderr, err = ssh.Run(client, fmt.Sprintf("docker swarm init --advertise-addr %s", client.RemoteAddr()), sudo)
+			if err != nil || stderr != "" {
+				return errors.New(strings.Join([]string{err.Error(), stderr}, "\n"))
 			}
 		}
 	}
@@ -367,18 +366,19 @@ func runServerInit(in *os.File, out io.Writer, opts serverInitOptions) error {
 	server := config.Servers[opts.name]
 	server.Host = opts.host
 	server.Port = opts.port
-	if server.User != opts.deployerUser {
-		server.Key = ""
-	}
+	server.Key = ""
 	server.User = opts.deployerUser
 
-	_, err = ssh.Run(client, fmt.Sprintf("id %s", server.User), false)
+	_, stderr, err = ssh.Run(client, fmt.Sprintf("id %s", server.User), false)
 	if err != nil {
+		return err
+	}
+	if stderr != "" {
 		fmt.Fprintf(out, "Creating user '%s'...\n", server.User)
 		if !opts.dryRun {
-			_, err := ssh.Run(client, fmt.Sprintf("adduser --disabled-password --comment '' %s", server.User), sudo)
-			if err != nil {
-				return fmt.Errorf("failed to create deployer user: %w", err)
+			_, stderr, err := ssh.Run(client, fmt.Sprintf("adduser --disabled-password --comment '' %s", server.User), sudo)
+			if err != nil || stderr != "" {
+				return errors.New(strings.Join([]string{err.Error(), stderr}, "\n"))
 			}
 		}
 	}
@@ -412,18 +412,18 @@ func runServerInit(in *os.File, out io.Writer, opts serverInitOptions) error {
 	}
 
 	if !opts.dryRun {
-		_, err := ssh.Run(client, fmt.Sprintf("usermod -aG docker %s", opts.deployerUser), sudo)
-		if err != nil {
-			return err
+		_, stderr, err := ssh.Run(client, fmt.Sprintf("usermod -aG docker %s", opts.deployerUser), sudo)
+		if err != nil || stderr != "" {
+			return errors.New(strings.Join([]string{err.Error(), stderr}, "\n"))
 		}
 	}
 
 	if opts.disablePasswordAuth {
 		fmt.Fprintln(out, "Disabling password authentication...")
 		if !opts.dryRun {
-			_, err := ssh.Run(client, "sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config && systemctl restart sshd", sudo)
-			if err != nil {
-				return fmt.Errorf("failed to disable password auth: %w", err)
+			_, stderr, err := ssh.Run(client, "sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config && systemctl restart sshd", sudo)
+			if err != nil || stderr != "" {
+				return errors.New(strings.Join([]string{err.Error(), stderr}, "\n"))
 			}
 		}
 	}
@@ -463,9 +463,9 @@ func ensureAuthorizedKey(client *gossh.Client, sudo bool, user, pubKey string) e
 	pubKey = strings.TrimSpace(pubKey)
 	script := fmt.Sprintf(`mkdir -p %s && (grep -qF '%s' %s/authorized_keys 2>/dev/null || echo '%s' >> %s/authorized_keys) && chown -R %s:%s %s && chmod 700 %s && chmod 600 %s/authorized_keys`,
 		sshDir, pubKey, sshDir, pubKey, sshDir, user, user, sshDir, sshDir, sshDir)
-	_, err := ssh.Run(client, script, sudo)
-	if err != nil {
-		return err
+	_, stderr, err := ssh.Run(client, script, sudo)
+	if err != nil || stderr != "" {
+		return errors.New(strings.Join([]string{err.Error(), stderr}, "\n"))
 	}
 	return err
 }
@@ -475,6 +475,9 @@ func keyInstalled(client *gossh.Client, user, pubKey string) bool {
 	if user != "root" {
 		home = "/home/" + user
 	}
-	stdout, _ := ssh.Run(client, fmt.Sprintf("cat %s/.ssh/authorized_keys 2>/dev/null", home), false)
+	stdout, stderr, err := ssh.Run(client, fmt.Sprintf("cat %s/.ssh/authorized_keys 2>/dev/null", home), false)
+	if err != nil || stderr != "" {
+		return false
+	}
 	return strings.Contains(stdout, pubKey)
 }
