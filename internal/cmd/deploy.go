@@ -99,17 +99,12 @@ func runDeploy(ctx context.Context, out io.Writer, opts deployOptions) error {
 		}
 	}
 
-	server, err := cfg.GetServer(opts.server)
+	client, err := docker.GetManagerClient(ctx, cfg.Servers)
 	if err != nil {
 		return err
 	}
 
-	dockerClient, err := docker.NewClientSSH(server.Host, server.Port, server.User, []byte(server.Key))
-	if err != nil {
-		return err
-	}
-
-	err = docker.Deploy(ctx, dockerClient, project, docker.DeployOptions{
+	err = docker.Deploy(ctx, client, project, docker.DeployOptions{
 		Secrets:      secrets,
 		Stack:        opts.stack,
 		Prune:        opts.prune,
