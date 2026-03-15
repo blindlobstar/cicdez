@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -57,7 +58,7 @@ func NewServerCommand() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			addOpts.host = args[0]
-			return runServerAdd(cmd.OutOrStdout(), addOpts)
+			return runServerAdd(cmd.Context(), cmd.OutOrStdout(), addOpts)
 		},
 	}
 	addCmd.Flags().StringVarP(&addOpts.user, "user", "u", "root", "ssh user")
@@ -120,7 +121,7 @@ Example:
 	return cmd
 }
 
-func runServerAdd(out io.Writer, opts serverAddOptions) error {
+func runServerAdd(ctx context.Context, out io.Writer, opts serverAddOptions) error {
 	port := 22
 
 	if h, p, err := net.SplitHostPort(opts.host); err == nil {
@@ -130,13 +131,13 @@ func runServerAdd(out io.Writer, opts serverAddOptions) error {
 		}
 	}
 
-	var keyContent string
+	var key []byte
 	if opts.keyFile != "" {
 		data, err := os.ReadFile(opts.keyFile)
 		if err != nil {
 			return fmt.Errorf("failed to read key file: %w", err)
 		}
-		keyContent = string(data)
+		key = data
 	}
 
 	cwd, err := os.Getwd()
@@ -149,12 +150,60 @@ func runServerAdd(out io.Writer, opts serverAddOptions) error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
+	node, err := docker.NewClientSSH(opts.host, port, opts.user, key)
+	if err != nil {
+		return err
+	}
+
+	info, err := node.Info(ctx, dockerclint.InfoOptions{})
+	if err != nil {
+		return err
+	}
+	if info.Info.Swarm.LocalNodeState != swarm.LocalNodeStateActive {
+		// TODO: error message: use cicdez init
+		return nil
+	}
+
+	manager, err := docker.GetManagerClient(ctx, config.Servers)
+	if err != nil && !errors.Is(err, docker.ErrManagerNotFound) {
+		return err
+	}
+
+	// if node is a worker, we should check if it's part of a cluster
+	if !info.Info.Swarm.ControlAvailable {
+		addresses := make([]string, 0, len(info.Info.Swarm.RemoteManagers))
+		for _, p := range info.Info.Swarm.RemoteManagers {
+			addresses = append(addresses, p.Addr)
+		}
+		if !slices.Contains(addresses, manager.DaemonHost()) {
+			// TODO: error message
+			return nil
+		}
+	}
+
+	inspect, err := manager.SwarmInspect(ctx, dockerclint.SwarmInspectOptions{})
+	if err != nil {
+		return err
+	}
+
+	token := inspect.Swarm.JoinTokens.Manager
+	if info.Info.Swarm.ControlAvailable {
+		token = inspect.Swarm.JoinTokens.Worker
+	}
+
+	if _, err := node.SwarmJoin(ctx, dockerclint.SwarmJoinOptions{
+		AdvertiseAddr: opts.host,
+		RemoteAddrs:   []string{manager.DaemonHost()},
+		JoinToken:     token,
+	}); err != nil {
+		return err
+	}
+
 	config.Servers[opts.host] = vault.Server{
 		Port: port,
 		User: opts.user,
-		Key:  keyContent,
+		Key:  string(key),
 	}
-	// TODO: join node to manager
 
 	if err := vault.SaveConfig(cwd, config); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
