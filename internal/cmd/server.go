@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -11,15 +12,18 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/blindlobstar/cicdez/internal/docker"
 	"github.com/blindlobstar/cicdez/internal/ssh"
 	"github.com/blindlobstar/cicdez/internal/vault"
+	"github.com/moby/moby/api/types/swarm"
+	"github.com/moby/moby/client"
+	dockerclint "github.com/moby/moby/client"
 	"github.com/spf13/cobra"
 	gossh "golang.org/x/crypto/ssh"
 	"golang.org/x/term"
 )
 
 type serverAddOptions struct {
-	name    string
 	host    string
 	user    string
 	keyFile string
@@ -29,18 +33,14 @@ type serverRemoveOptions struct {
 	name string
 }
 
-type serverSetDefaultOptions struct {
-	name string
-}
-
 type serverInitOptions struct {
-	name                string
 	host                string
 	port                int
 	user                string
 	rootKey             string
 	disablePasswordAuth bool
 	deployerUser        string
+	worker              bool
 	dryRun              bool
 }
 
@@ -52,22 +52,21 @@ func NewServerCommand() *cobra.Command {
 
 	addOpts := serverAddOptions{}
 	addCmd := &cobra.Command{
-		Use:   "add NAME",
+		Use:   "add HOST",
 		Short: "Add or update a server",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			addOpts.name = args[0]
+			addOpts.host = args[0]
 			return runServerAdd(cmd.OutOrStdout(), addOpts)
 		},
 	}
-	addCmd.Flags().StringVarP(&addOpts.host, "host", "H", "", "hostname or IP with optional port (HOST:PORT)")
 	addCmd.Flags().StringVarP(&addOpts.user, "user", "u", "root", "ssh user")
 	addCmd.Flags().StringVarP(&addOpts.keyFile, "key-file", "i", "", "path to ssh private key file")
 	addCmd.MarkFlagRequired("host")
 
 	removeOpts := serverRemoveOptions{}
 	removeCmd := &cobra.Command{
-		Use:     "remove NAME",
+		Use:     "remove HOST",
 		Aliases: []string{"rm", "delete"},
 		Short:   "Remove a server",
 		Args:    cobra.ExactArgs(1),
@@ -77,20 +76,9 @@ func NewServerCommand() *cobra.Command {
 		},
 	}
 
-	setDefaultOpts := serverSetDefaultOptions{}
-	setDefaultCmd := &cobra.Command{
-		Use:   "set-default NAME",
-		Short: "Set default server",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			setDefaultOpts.name = args[0]
-			return runServerSetDefault(cmd.OutOrStdout(), setDefaultOpts)
-		},
-	}
-
 	initOpts := serverInitOptions{port: 22, user: "root", deployerUser: "deployer"}
 	initCmd := &cobra.Command{
-		Use:   "init NAME HOST",
+		Use:   "init HOST",
 		Short: "Initialize a fresh server for Docker Swarm deployments",
 		Long: `Provision a fresh server for Docker Swarm deployments.
 
@@ -98,17 +86,16 @@ This command connects to a server, creates a deployer user, installs Docker,
 initializes a Docker Swarm, and saves the configuration.
 
 Example:
-  cicdez server init production 192.168.1.100
-  cicdez server init staging example.com -i ~/.ssh/id_ed25519`,
+  cicdez server init 192.168.1.100
+  cicdez server init example.com -i ~/.ssh/id_ed25519`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			initOpts.name = args[0]
 			initOpts.host = args[1]
 			in, _ := cmd.InOrStdin().(*os.File)
 			if in == nil {
 				in = os.Stdin
 			}
-			return runServerInit(in, cmd.OutOrStdout(), initOpts)
+			return runServerInit(cmd.Context(), in, cmd.OutOrStdout(), initOpts)
 		},
 	}
 	initCmd.Flags().StringVarP(&initOpts.user, "user", "u", "root", "SSH user for initial connection")
@@ -129,17 +116,15 @@ Example:
 		},
 	})
 	cmd.AddCommand(removeCmd)
-	cmd.AddCommand(setDefaultCmd)
 
 	return cmd
 }
 
 func runServerAdd(out io.Writer, opts serverAddOptions) error {
-	host := opts.host
 	port := 22
 
 	if h, p, err := net.SplitHostPort(opts.host); err == nil {
-		host = h
+		opts.host = h
 		if pn, err := strconv.Atoi(p); err == nil {
 			port = pn
 		}
@@ -164,18 +149,18 @@ func runServerAdd(out io.Writer, opts serverAddOptions) error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	config.AddServer(opts.name, vault.Server{
-		Host: host,
+	config.Servers[opts.host] = vault.Server{
 		Port: port,
 		User: opts.user,
 		Key:  keyContent,
-	})
+	}
+	// TODO: join node to manager
 
 	if err := vault.SaveConfig(cwd, config); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 
-	fmt.Fprintf(out, "Server '%s' added\n", opts.name)
+	fmt.Fprintf(out, "Server '%s' added\n", opts.host)
 	return nil
 }
 
@@ -195,25 +180,21 @@ func runServerList(out io.Writer) error {
 		return nil
 	}
 
-	names := make([]string, 0, len(config.Servers))
-	for name := range config.Servers {
-		names = append(names, name)
+	hosts := make([]string, 0, len(config.Servers))
+	for host := range config.Servers {
+		hosts = append(hosts, host)
 	}
-	sort.Strings(names)
+	sort.Strings(hosts)
 
 	fmt.Fprintln(out, "Servers:")
-	for _, name := range names {
-		server := config.Servers[name]
-		defaultMark := ""
-		if name == config.DefaultServer {
-			defaultMark = " *"
-		}
-		fmt.Fprintf(out, "  %s%s:\n", name, defaultMark)
+	for _, host := range hosts {
+		server := config.Servers[host]
+
 		port := server.Port
 		if port == 0 {
 			port = 22
 		}
-		fmt.Fprintf(out, "\tHost: %s:%d\n", server.Host, port)
+		fmt.Fprintf(out, "\tHost: %s:%d\n", host, port)
 		fmt.Fprintf(out, "\tUser: %s\n", server.User)
 		if server.Key != "" {
 			fmt.Fprintln(out, "\tKey: <configured>")
@@ -238,47 +219,22 @@ func runServerRemove(out io.Writer, opts serverRemoveOptions) error {
 		return fmt.Errorf("server '%s' not found", opts.name)
 	}
 
-	newDefault := config.RemoveServer(opts.name)
-
-	if err := vault.SaveConfig(cwd, config); err != nil {
-		return fmt.Errorf("failed to save config: %w", err)
-	}
-	if newDefault != "" {
-		fmt.Fprintf(out, "Server '%s' removed. New default: %s\n", opts.name, newDefault)
-	} else {
-		fmt.Fprintf(out, "Server '%s' removed\n", opts.name)
-	}
-	return nil
-}
-
-func runServerSetDefault(out io.Writer, opts serverSetDefaultOptions) error {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("failed to get current directory: %w", err)
-	}
-
-	config, err := vault.LoadConfig(cwd)
-	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
-	}
-
-	if err := config.SetDefault(opts.name); err != nil {
-		return err
-	}
+	// TODO: remove node from cluster
+	delete(config.Servers, opts.name)
 
 	if err := vault.SaveConfig(cwd, config); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 
-	fmt.Fprintf(out, "Server '%s' set as default\n", opts.name)
+	fmt.Fprintf(out, "Server '%s' removed\n", opts.name)
 	return nil
 }
 
-func runServerInit(in *os.File, out io.Writer, opts serverInitOptions) error {
+func runServerInit(ctx context.Context, in *os.File, out io.Writer, opts serverInitOptions) error {
 	sudo := opts.user != "root"
 
 	homeDir, _ := os.UserHomeDir()
-	rootKeyPath := filepath.Join(homeDir, ".ssh", opts.name+"-"+opts.user)
+	rootKeyPath := filepath.Join(homeDir, ".ssh", opts.host+"-"+opts.user)
 
 	if opts.rootKey == "" {
 		if _, err := os.Stat(rootKeyPath); err == nil {
@@ -345,20 +301,6 @@ func runServerInit(in *os.File, out io.Writer, opts serverInitOptions) error {
 		}
 	}
 
-	stdout, stderr, err := ssh.Run(client, "docker info --format '{{.Swarm.LocalNodeState}}'", sudo)
-	if err != nil || stderr != "" {
-		return errors.New(strings.Join([]string{err.Error(), stderr}, "\n"))
-	}
-	if stdout != "active" {
-		fmt.Fprintln(out, "Initializing Docker Swarm...")
-		if !opts.dryRun {
-			_, stderr, err = ssh.Run(client, fmt.Sprintf("docker swarm init --advertise-addr %s", client.RemoteAddr()), sudo)
-			if err != nil || stderr != "" {
-				return errors.New(strings.Join([]string{err.Error(), stderr}, "\n"))
-			}
-		}
-	}
-
 	cwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get current directory: %w", err)
@@ -369,15 +311,14 @@ func runServerInit(in *os.File, out io.Writer, opts serverInitOptions) error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	server := config.Servers[opts.name]
-	server.Host = opts.host
+	server := config.Servers[opts.host]
 	server.Port = opts.port
 	if server.User != opts.deployerUser {
 		server.Key = ""
 	}
 	server.User = opts.deployerUser
 
-	_, stderr, err = ssh.Run(client, fmt.Sprintf("id %s", server.User), false)
+	_, stderr, err := ssh.Run(client, fmt.Sprintf("id %s", server.User), false)
 	if err != nil {
 		return err
 	}
@@ -438,19 +379,78 @@ func runServerInit(in *os.File, out io.Writer, opts serverInitOptions) error {
 
 	fmt.Fprintln(out, "Saving configuration...")
 	if !opts.dryRun {
-		config.AddServer(opts.name, server)
+		config.Servers[opts.host] = server
 
 		if err := vault.SaveConfig(cwd, config); err != nil {
 			return fmt.Errorf("failed to save config: %w", err)
 		}
 	}
 
+	dockerClient, err := docker.NewClientSSH(opts.host, server.Port, server.User, []byte(server.Key))
+	if err != nil {
+		return err
+	}
+	defer dockerClient.Close()
+
+	info, err := dockerClient.Info(ctx, dockerclint.InfoOptions{})
+	if err != nil {
+		return err
+	}
+
+	if info.Info.Swarm.LocalNodeState != swarm.LocalNodeStateActive {
+		fmt.Fprintln(out, "Initializing Docker Swarm...")
+		if !opts.dryRun {
+			dockerClient.SwarmInit(ctx, dockerclint.SwarmInitOptions{
+				AdvertiseAddr: client.RemoteAddr().String(),
+			})
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	if err := joinSwarm(ctx, dockerClient, opts.host, config.Servers, opts.worker, opts.dryRun); err != nil {
+		return err
+	}
+
 	if opts.dryRun {
 		fmt.Fprintln(out, "\nDry run complete. No changes were made.")
 	} else {
-		fmt.Fprintf(out, "\nServer '%s' initialized successfully.\n", opts.name)
+		fmt.Fprintf(out, "\nServer '%s' initialized successfully.\n", opts.host)
 	}
 
+	return nil
+}
+
+func joinSwarm(ctx context.Context, node client.APIClient, host string, servers map[string]vault.Server, worker, dryRun bool) error {
+	manager, err := docker.GetManagerClient(ctx, servers, host)
+	if errors.Is(err, docker.ErrManagerNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	defer manager.Close()
+
+	inspect, err := manager.SwarmInspect(ctx, dockerclint.SwarmInspectOptions{})
+	if err != nil {
+		return err
+	}
+
+	token := inspect.Swarm.JoinTokens.Manager
+	if worker {
+		token = inspect.Swarm.JoinTokens.Worker
+	}
+
+	if dryRun {
+		if _, err := node.SwarmJoin(ctx, dockerclint.SwarmJoinOptions{
+			AdvertiseAddr: host,
+			RemoteAddrs:   []string{manager.DaemonHost()},
+			JoinToken:     token,
+		}); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
