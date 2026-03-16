@@ -12,13 +12,14 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/blindlobstar/cicdez/internal/docker"
 	"github.com/blindlobstar/cicdez/internal/ssh"
 	"github.com/blindlobstar/cicdez/internal/vault"
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/client"
-	dockerclint "github.com/moby/moby/client"
+	dockerclient "github.com/moby/moby/client"
 	"github.com/spf13/cobra"
 	gossh "golang.org/x/crypto/ssh"
 	"golang.org/x/term"
@@ -73,7 +74,7 @@ func NewServerCommand() *cobra.Command {
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			removeOpts.name = args[0]
-			return runServerRemove(cmd.OutOrStdout(), removeOpts)
+			return runServerRemove(cmd.Context(), cmd.OutOrStdout(), removeOpts)
 		},
 	}
 
@@ -155,7 +156,7 @@ func runServerAdd(ctx context.Context, out io.Writer, opts serverAddOptions) err
 		return err
 	}
 
-	info, err := node.Info(ctx, dockerclint.InfoOptions{})
+	info, err := node.Info(ctx, dockerclient.InfoOptions{})
 	if err != nil {
 		return err
 	}
@@ -181,7 +182,7 @@ func runServerAdd(ctx context.Context, out io.Writer, opts serverAddOptions) err
 		}
 	}
 
-	inspect, err := manager.SwarmInspect(ctx, dockerclint.SwarmInspectOptions{})
+	inspect, err := manager.SwarmInspect(ctx, dockerclient.SwarmInspectOptions{})
 	if err != nil {
 		return err
 	}
@@ -191,7 +192,7 @@ func runServerAdd(ctx context.Context, out io.Writer, opts serverAddOptions) err
 		token = inspect.Swarm.JoinTokens.Worker
 	}
 
-	if _, err := node.SwarmJoin(ctx, dockerclint.SwarmJoinOptions{
+	if _, err := node.SwarmJoin(ctx, dockerclient.SwarmJoinOptions{
 		AdvertiseAddr: opts.host,
 		RemoteAddrs:   []string{manager.DaemonHost()},
 		JoinToken:     token,
@@ -253,7 +254,7 @@ func runServerList(out io.Writer) error {
 	return nil
 }
 
-func runServerRemove(out io.Writer, opts serverRemoveOptions) error {
+func runServerRemove(ctx context.Context, out io.Writer, opts serverRemoveOptions) error {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get current directory: %w", err)
@@ -264,11 +265,86 @@ func runServerRemove(out io.Writer, opts serverRemoveOptions) error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	if _, exists := config.Servers[opts.name]; !exists {
+	server, exists := config.Servers[opts.name]
+	if !exists {
 		return fmt.Errorf("server '%s' not found", opts.name)
 	}
 
-	// TODO: remove node from cluster
+	node, err := docker.NewClientSSH(opts.name, server.Port, server.User, []byte(server.Key))
+	if err != nil {
+		return err
+	}
+
+	info, err := node.Info(ctx, dockerclient.InfoOptions{})
+	if err != nil {
+		return err
+	}
+	nodeID := info.Info.Swarm.NodeID
+	worker := !info.Info.Swarm.ControlAvailable
+
+	// TODO: trying to remove only manager node
+	manager, err := docker.GetManagerClient(ctx, config.Servers, opts.name)
+	if err != nil {
+		return err
+	}
+
+	ni, err := manager.NodeInspect(ctx, nodeID, dockerclient.NodeInspectOptions{})
+	if err != nil {
+		return err
+	}
+	if !worker {
+		ni.Node.Spec.Role = swarm.NodeRoleWorker
+	}
+	ni.Node.Spec.Availability = swarm.NodeAvailabilityDrain
+
+	_, err = manager.NodeUpdate(ctx, nodeID, dockerclient.NodeUpdateOptions{
+		Version: ni.Node.Version,
+		Spec:    ni.Node.Spec,
+	})
+	if err != nil {
+		return nil
+	}
+
+	cctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+
+	filters := make(client.Filters)
+	filters.Add("node", nodeID)
+	filters.Add("desired-state", "running")
+
+wait:
+	for {
+		select {
+		case <-cctx.Done():
+			return cctx.Err()
+		case <-time.Tick(2 * time.Second):
+			tasks, err := node.TaskList(cctx, dockerclient.TaskListOptions{
+				Filters: filters,
+			})
+			if err != nil {
+				return err
+			}
+
+			if len(tasks.Items) == 0 {
+				break wait
+			}
+		}
+	}
+
+	_, err = node.SwarmLeave(ctx, dockerclient.SwarmLeaveOptions{
+		Force: false,
+	})
+	if err != nil {
+		return err
+	}
+
+	_, err = manager.NodeRemove(ctx, nodeID, dockerclient.NodeRemoveOptions{
+		Force: false,
+	})
+	if err != nil {
+		return err
+	}
+
 	delete(config.Servers, opts.name)
 
 	if err := vault.SaveConfig(cwd, config); err != nil {
@@ -441,7 +517,7 @@ func runServerInit(ctx context.Context, in *os.File, out io.Writer, opts serverI
 	}
 	defer dockerClient.Close()
 
-	info, err := dockerClient.Info(ctx, dockerclint.InfoOptions{})
+	info, err := dockerClient.Info(ctx, dockerclient.InfoOptions{})
 	if err != nil {
 		return err
 	}
@@ -449,7 +525,7 @@ func runServerInit(ctx context.Context, in *os.File, out io.Writer, opts serverI
 	if info.Info.Swarm.LocalNodeState != swarm.LocalNodeStateActive {
 		fmt.Fprintln(out, "Initializing Docker Swarm...")
 		if !opts.dryRun {
-			dockerClient.SwarmInit(ctx, dockerclint.SwarmInitOptions{
+			dockerClient.SwarmInit(ctx, dockerclient.SwarmInitOptions{
 				AdvertiseAddr: client.RemoteAddr().String(),
 			})
 			if err != nil {
@@ -481,7 +557,7 @@ func joinSwarm(ctx context.Context, node client.APIClient, host string, servers 
 	}
 	defer manager.Close()
 
-	inspect, err := manager.SwarmInspect(ctx, dockerclint.SwarmInspectOptions{})
+	inspect, err := manager.SwarmInspect(ctx, dockerclient.SwarmInspectOptions{})
 	if err != nil {
 		return err
 	}
@@ -492,7 +568,7 @@ func joinSwarm(ctx context.Context, node client.APIClient, host string, servers 
 	}
 
 	if dryRun {
-		if _, err := node.SwarmJoin(ctx, dockerclint.SwarmJoinOptions{
+		if _, err := node.SwarmJoin(ctx, dockerclient.SwarmJoinOptions{
 			AdvertiseAddr: host,
 			RemoteAddrs:   []string{manager.DaemonHost()},
 			JoinToken:     token,
