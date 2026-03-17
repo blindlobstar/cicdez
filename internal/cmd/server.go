@@ -154,6 +154,9 @@ func runServerAdd(ctx context.Context, out io.Writer, opts serverAddOptions) err
 		return err
 	}
 
+	// TODO: add only same cluster nodes.
+	// if node is not in a cluster, join it first
+
 	info, err := node.Info(ctx, dockerclient.InfoOptions{})
 	if err != nil {
 		return err
@@ -162,18 +165,27 @@ func runServerAdd(ctx context.Context, out io.Writer, opts serverAddOptions) err
 		return errors.New("swarm mode is not enabled. please use cicdez server init")
 	}
 
-	manager, err := docker.GetManagerClient(ctx, config.Servers)
+	manager, managerHost, err := docker.GetManagerClient(ctx, config.Servers)
 	if err != nil && !errors.Is(err, docker.ErrManagerNotFound) {
 		return err
 	}
 
 	// if node is a worker, we should check if it's part of a cluster
 	if !info.Info.Swarm.ControlAvailable {
-		addresses := make(map[string]any, len(info.Info.Swarm.RemoteManagers))
+		var inswarm bool
 		for _, p := range info.Info.Swarm.RemoteManagers {
-			addresses[p.Addr] = struct{}{}
+			host, _, err := net.SplitHostPort(p.Addr)
+			if err != nil {
+				return err
+			}
+
+			if host == managerHost {
+				inswarm = true
+				break
+			}
 		}
-		if _, ok := addresses[manager.DaemonHost()]; !ok {
+
+		if !inswarm {
 			return errors.New("worker must be part of a cluster")
 		}
 	}
@@ -190,7 +202,7 @@ func runServerAdd(ctx context.Context, out io.Writer, opts serverAddOptions) err
 
 	if _, err := node.SwarmJoin(ctx, dockerclient.SwarmJoinOptions{
 		AdvertiseAddr: opts.host,
-		RemoteAddrs:   []string{manager.DaemonHost()},
+		RemoteAddrs:   []string{managerHost},
 		JoinToken:     token,
 	}); err != nil {
 		return err
@@ -280,7 +292,7 @@ func runServerRemove(ctx context.Context, out io.Writer, opts serverRemoveOption
 	worker := !info.Info.Swarm.ControlAvailable
 
 	// TODO: trying to remove only manager node
-	manager, err := docker.GetManagerClient(ctx, config.Servers, opts.name)
+	manager, _, err := docker.GetManagerClient(ctx, config.Servers, opts.name)
 	if err != nil {
 		return err
 	}
@@ -525,6 +537,7 @@ func runServerInit(ctx context.Context, in *os.File, out io.Writer, opts serverI
 	if info.Info.Swarm.LocalNodeState != swarm.LocalNodeStateActive {
 		fmt.Fprintln(out, "Initializing Docker Swarm...")
 		if !opts.dryRun {
+			// TODO: don't need to init swarm mode if we're joining node to existing cluster
 			dockerClient.SwarmInit(ctx, dockerclient.SwarmInitOptions{
 				AdvertiseAddr: client.RemoteAddr().String(),
 			})
@@ -548,7 +561,7 @@ func runServerInit(ctx context.Context, in *os.File, out io.Writer, opts serverI
 }
 
 func joinSwarm(ctx context.Context, node client.APIClient, host string, servers map[string]vault.Server, worker, dryRun bool) error {
-	manager, err := docker.GetManagerClient(ctx, servers, host)
+	manager, host, err := docker.GetManagerClient(ctx, servers, host)
 	if errors.Is(err, docker.ErrManagerNotFound) {
 		return nil
 	}
@@ -570,7 +583,7 @@ func joinSwarm(ctx context.Context, node client.APIClient, host string, servers 
 	if !dryRun {
 		if _, err := node.SwarmJoin(ctx, dockerclient.SwarmJoinOptions{
 			AdvertiseAddr: host,
-			RemoteAddrs:   []string{manager.DaemonHost()},
+			RemoteAddrs:   []string{host},
 			JoinToken:     token,
 		}); err != nil {
 			return err
