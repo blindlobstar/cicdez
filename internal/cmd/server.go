@@ -63,7 +63,6 @@ func NewServerCommand() *cobra.Command {
 	}
 	addCmd.Flags().StringVarP(&addOpts.user, "user", "u", "root", "ssh user")
 	addCmd.Flags().StringVarP(&addOpts.keyFile, "key-file", "i", "", "path to ssh private key file")
-	addCmd.MarkFlagRequired("host")
 
 	removeOpts := serverRemoveOptions{}
 	removeCmd := &cobra.Command{
@@ -89,9 +88,9 @@ initializes a Docker Swarm, and saves the configuration.
 Example:
   cicdez server init 192.168.1.100
   cicdez server init example.com -i ~/.ssh/id_ed25519`,
-		Args: cobra.ExactArgs(2),
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			initOpts.host = args[1]
+			initOpts.host = args[0]
 			in, _ := cmd.InOrStdin().(*os.File)
 			if in == nil {
 				in = os.Stdin
@@ -251,6 +250,7 @@ func runServerList(out io.Writer) error {
 	return nil
 }
 
+// TODO: force flag
 func runServerRemove(ctx context.Context, out io.Writer, opts serverRemoveOptions) error {
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -299,11 +299,14 @@ func runServerRemove(ctx context.Context, out io.Writer, opts serverRemoveOption
 		Spec:    ni.Node.Spec,
 	})
 	if err != nil {
-		return nil
+		return err
 	}
 
 	cctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
+
+	t := time.NewTicker(time.Second)
+	defer t.Stop()
 
 	filters := make(client.Filters)
 	filters.Add("node", nodeID)
@@ -314,7 +317,7 @@ wait:
 		select {
 		case <-cctx.Done():
 			return cctx.Err()
-		case <-time.Tick(time.Second):
+		case <-t.C:
 			tasks, err := node.TaskList(cctx, dockerclient.TaskListOptions{
 				Filters: filters,
 			})
@@ -564,7 +567,7 @@ func joinSwarm(ctx context.Context, node client.APIClient, host string, servers 
 		token = inspect.Swarm.JoinTokens.Worker
 	}
 
-	if dryRun {
+	if !dryRun {
 		if _, err := node.SwarmJoin(ctx, dockerclient.SwarmJoinOptions{
 			AdvertiseAddr: host,
 			RemoteAddrs:   []string{manager.DaemonHost()},
