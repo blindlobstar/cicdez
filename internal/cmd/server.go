@@ -8,7 +8,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -161,8 +160,7 @@ func runServerAdd(ctx context.Context, out io.Writer, opts serverAddOptions) err
 		return err
 	}
 	if info.Info.Swarm.LocalNodeState != swarm.LocalNodeStateActive {
-		// TODO: error message: use cicdez init
-		return nil
+		return errors.New("swarm mode is not enabled. please use cicdez server init")
 	}
 
 	manager, err := docker.GetManagerClient(ctx, config.Servers)
@@ -172,13 +170,12 @@ func runServerAdd(ctx context.Context, out io.Writer, opts serverAddOptions) err
 
 	// if node is a worker, we should check if it's part of a cluster
 	if !info.Info.Swarm.ControlAvailable {
-		addresses := make([]string, 0, len(info.Info.Swarm.RemoteManagers))
+		addresses := make(map[string]any, len(info.Info.Swarm.RemoteManagers))
 		for _, p := range info.Info.Swarm.RemoteManagers {
-			addresses = append(addresses, p.Addr)
+			addresses[p.Addr] = struct{}{}
 		}
-		if !slices.Contains(addresses, manager.DaemonHost()) {
-			// TODO: error message
-			return nil
+		if _, ok := addresses[manager.DaemonHost()]; !ok {
+			return errors.New("worker must be part of a cluster")
 		}
 	}
 
@@ -317,7 +314,7 @@ wait:
 		select {
 		case <-cctx.Done():
 			return cctx.Err()
-		case <-time.Tick(2 * time.Second):
+		case <-time.Tick(time.Second):
 			tasks, err := node.TaskList(cctx, dockerclient.TaskListOptions{
 				Filters: filters,
 			})
