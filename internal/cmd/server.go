@@ -165,7 +165,7 @@ func runServerAdd(ctx context.Context, out io.Writer, opts serverAddOptions) err
 		return errors.New("swarm mode is not enabled. please use cicdez server init")
 	}
 
-	manager, managerHost, err := docker.GetManagerClient(ctx, config.Servers)
+	manager, mhost, err := docker.GetManagerClient(ctx, config.Servers)
 	if err != nil && !errors.Is(err, docker.ErrManagerNotFound) {
 		return err
 	}
@@ -179,7 +179,7 @@ func runServerAdd(ctx context.Context, out io.Writer, opts serverAddOptions) err
 				return err
 			}
 
-			if host == managerHost {
+			if host == mhost {
 				inswarm = true
 				break
 			}
@@ -202,7 +202,7 @@ func runServerAdd(ctx context.Context, out io.Writer, opts serverAddOptions) err
 
 	if _, err := node.SwarmJoin(ctx, dockerclient.SwarmJoinOptions{
 		AdvertiseAddr: opts.host,
-		RemoteAddrs:   []string{managerHost},
+		RemoteAddrs:   []string{mhost},
 		JoinToken:     token,
 	}); err != nil {
 		return err
@@ -514,41 +514,17 @@ func runServerInit(ctx context.Context, in *os.File, out io.Writer, opts serverI
 		}
 	}
 
+	config.Servers[opts.host] = server
+
+	if err := joinSwarm(ctx, opts.host, config.Servers, opts.worker, opts.dryRun); err != nil {
+		return err
+	}
+
 	fmt.Fprintln(out, "Saving configuration...")
 	if !opts.dryRun {
-		config.Servers[opts.host] = server
-
 		if err := vault.SaveConfig(cwd, config); err != nil {
 			return fmt.Errorf("failed to save config: %w", err)
 		}
-	}
-
-	dockerClient, err := docker.NewClientSSH(opts.host, server.Port, server.User, []byte(server.Key))
-	if err != nil {
-		return err
-	}
-	defer dockerClient.Close()
-
-	info, err := dockerClient.Info(ctx, dockerclient.InfoOptions{})
-	if err != nil {
-		return err
-	}
-
-	if info.Info.Swarm.LocalNodeState != swarm.LocalNodeStateActive {
-		fmt.Fprintln(out, "Initializing Docker Swarm...")
-		if !opts.dryRun {
-			// TODO: don't need to init swarm mode if we're joining node to existing cluster
-			dockerClient.SwarmInit(ctx, dockerclient.SwarmInitOptions{
-				AdvertiseAddr: client.RemoteAddr().String(),
-			})
-			if err != nil {
-				return err
-			}
-		}
-	}
-
-	if err := joinSwarm(ctx, dockerClient, opts.host, config.Servers, opts.worker, opts.dryRun); err != nil {
-		return err
 	}
 
 	if opts.dryRun {
@@ -560,9 +536,35 @@ func runServerInit(ctx context.Context, in *os.File, out io.Writer, opts serverI
 	return nil
 }
 
-func joinSwarm(ctx context.Context, node client.APIClient, host string, servers map[string]vault.Server, worker, dryRun bool) error {
-	manager, host, err := docker.GetManagerClient(ctx, servers, host)
+func joinSwarm(ctx context.Context, host string, servers map[string]vault.Server, worker, dryRun bool) error {
+	server := servers[host]
+
+	node, err := docker.NewClientSSH(host, server.Port, server.User, []byte(server.Key))
+	if err != nil {
+		return err
+	}
+	defer node.Close()
+
+	info, err := node.Info(ctx, dockerclient.InfoOptions{})
+	if err != nil {
+		return err
+	}
+	manager, mhost, err := docker.GetManagerClient(ctx, servers, host)
 	if errors.Is(err, docker.ErrManagerNotFound) {
+		if worker {
+			return errors.New("can't init worker without manager")
+		}
+
+		if info.Info.Swarm.LocalNodeState != swarm.LocalNodeStateActive {
+			if !dryRun {
+				_, err := node.SwarmInit(ctx, dockerclient.SwarmInitOptions{
+					AdvertiseAddr: host,
+				})
+				if err != nil {
+					return err
+				}
+			}
+		}
 		return nil
 	}
 	if err != nil {
@@ -583,7 +585,7 @@ func joinSwarm(ctx context.Context, node client.APIClient, host string, servers 
 	if !dryRun {
 		if _, err := node.SwarmJoin(ctx, dockerclient.SwarmJoinOptions{
 			AdvertiseAddr: host,
-			RemoteAddrs:   []string{host},
+			RemoteAddrs:   []string{mhost},
 			JoinToken:     token,
 		}); err != nil {
 			return err
