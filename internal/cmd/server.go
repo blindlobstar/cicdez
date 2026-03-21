@@ -120,6 +120,9 @@ Example:
 	return cmd
 }
 
+// TODO: if there is no cluster yet - add server. if config contains a node, new node should be in same cluster.
+// ?? ask for manager node to be added first, if config empty
+// TODO: leave flag - leave cluster to join
 func runServerAdd(ctx context.Context, out io.Writer, opts serverAddOptions) error {
 	port := 22
 
@@ -263,6 +266,7 @@ func runServerList(out io.Writer) error {
 }
 
 // TODO: force flag
+// TODO: soft flag. remove server from config without leaving a cluster
 func runServerRemove(ctx context.Context, out io.Writer, opts serverRemoveOptions) error {
 	cwd, err := os.Getwd()
 	if err != nil {

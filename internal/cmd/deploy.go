@@ -99,7 +99,7 @@ func runDeploy(ctx context.Context, out io.Writer, opts deployOptions) error {
 		}
 	}
 
-	client, err := docker.GetManagerClient(ctx, cfg.Servers)
+	client, _, err := docker.GetManagerClient(ctx, cfg.Servers)
 	if err != nil {
 		return err
 	}
