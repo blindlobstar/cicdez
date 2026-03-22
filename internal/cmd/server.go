@@ -24,100 +24,41 @@ import (
 	"golang.org/x/term"
 )
 
-type serverAddOptions struct {
-	host    string
-	user    string
-	keyFile string
-}
-
-type serverRemoveOptions struct {
-	name string
-}
-
-type serverInitOptions struct {
-	host                string
-	port                int
-	user                string
-	rootKey             string
-	disablePasswordAuth bool
-	deployerUser        string
-	worker              bool
-	dryRun              bool
-}
-
 func NewServerCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "server",
 		Short: "Manage deployment servers",
 	}
 
-	addOpts := serverAddOptions{}
-	addCmd := &cobra.Command{
+	cmd.AddCommand(newServerAddCommand())
+	cmd.AddCommand(newServerListCommand())
+	cmd.AddCommand(newServerRemoveCommand())
+	cmd.AddCommand(newServerInitCommand())
+
+	return cmd
+}
+
+func newServerAddCommand() *cobra.Command {
+	opts := serverAddOptions{}
+	cmd := &cobra.Command{
 		Use:   "add HOST",
 		Short: "Add or update a server",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			addOpts.host = args[0]
-			return runServerAdd(cmd.Context(), cmd.OutOrStdout(), addOpts)
+			opts.host = args[0]
+			return runServerAdd(cmd.Context(), cmd.OutOrStdout(), opts)
 		},
 	}
-	addCmd.Flags().StringVarP(&addOpts.user, "user", "u", "root", "ssh user")
-	addCmd.Flags().StringVarP(&addOpts.keyFile, "key-file", "i", "", "path to ssh private key file")
-
-	removeOpts := serverRemoveOptions{}
-	removeCmd := &cobra.Command{
-		Use:     "remove HOST",
-		Aliases: []string{"rm", "delete"},
-		Short:   "Remove a server",
-		Args:    cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			removeOpts.name = args[0]
-			return runServerRemove(cmd.Context(), cmd.OutOrStdout(), removeOpts)
-		},
-	}
-
-	initOpts := serverInitOptions{port: 22, user: "root", deployerUser: "deployer"}
-	initCmd := &cobra.Command{
-		Use:   "init HOST",
-		Short: "Initialize a fresh server for Docker Swarm deployments",
-		Long: `Provision a fresh server for Docker Swarm deployments.
-
-This command connects to a server, creates a deployer user, installs Docker,
-initializes a Docker Swarm, and saves the configuration.
-
-Example:
-  cicdez server init 192.168.1.100
-  cicdez server init example.com -i ~/.ssh/id_ed25519`,
-		Args: cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			initOpts.host = args[0]
-			in, _ := cmd.InOrStdin().(*os.File)
-			if in == nil {
-				in = os.Stdin
-			}
-			return runServerInit(cmd.Context(), in, cmd.OutOrStdout(), initOpts)
-		},
-	}
-	initCmd.Flags().StringVarP(&initOpts.user, "user", "u", "root", "SSH user for initial connection")
-	initCmd.Flags().StringVarP(&initOpts.rootKey, "root-key", "i", "", "path to SSH private key")
-	initCmd.Flags().BoolVar(&initOpts.disablePasswordAuth, "disable-password-auth", false, "disable SSH password auth after setup")
-	initCmd.Flags().StringVar(&initOpts.deployerUser, "deployer-user", "deployer", "deployer username")
-	initCmd.Flags().IntVarP(&initOpts.port, "port", "p", 22, "SSH port")
-	initCmd.Flags().BoolVar(&initOpts.dryRun, "dry-run", false, "print what would be done without making changes")
-
-	cmd.AddCommand(initCmd)
-	cmd.AddCommand(addCmd)
-	cmd.AddCommand(&cobra.Command{
-		Use:     "list",
-		Aliases: []string{"ls"},
-		Short:   "List servers",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runServerList(cmd.OutOrStdout())
-		},
-	})
-	cmd.AddCommand(removeCmd)
+	cmd.Flags().StringVarP(&opts.user, "user", "u", "root", "ssh user")
+	cmd.Flags().StringVarP(&opts.keyFile, "key-file", "i", "", "path to ssh private key file")
 
 	return cmd
+}
+
+type serverAddOptions struct {
+	host    string
+	user    string
+	keyFile string
 }
 
 // TODO: if there is no cluster yet - add server. if config contains a node, new node should be in same cluster.
@@ -225,6 +166,17 @@ func runServerAdd(ctx context.Context, out io.Writer, opts serverAddOptions) err
 	return nil
 }
 
+func newServerListCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:     "list",
+		Aliases: []string{"ls"},
+		Short:   "List servers",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runServerList(cmd.OutOrStdout())
+		},
+	}
+}
+
 func runServerList(out io.Writer) error {
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -263,6 +215,26 @@ func runServerList(out io.Writer) error {
 	}
 
 	return nil
+}
+
+func newServerRemoveCommand() *cobra.Command {
+	opts := serverRemoveOptions{}
+	cmd := &cobra.Command{
+		Use:     "remove HOST",
+		Aliases: []string{"rm", "delete"},
+		Short:   "Remove a server",
+		Args:    cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			opts.name = args[0]
+			return runServerRemove(cmd.Context(), cmd.OutOrStdout(), opts)
+		},
+	}
+
+	return cmd
+}
+
+type serverRemoveOptions struct {
+	name string
 }
 
 // TODO: force flag
@@ -371,15 +343,79 @@ wait:
 	return nil
 }
 
+func newServerInitCommand() *cobra.Command {
+	var opts serverInitOptions
+	cmd := &cobra.Command{
+		Use:   "init HOST",
+		Short: "Initialize a fresh server for Docker Swarm deployments",
+		Long: `Provision a fresh server for Docker Swarm deployments.
+
+This command connects to a server, creates a deployer user, installs Docker,
+initializes a Docker Swarm, and saves the configuration.
+
+Example:
+  cicdez server init 192.168.1.100
+  cicdez server init example.com -i ~/.ssh/id_ed25519`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			opts.host = args[0]
+			in, _ := cmd.InOrStdin().(*os.File)
+
+			if !initSwarmMap[opts.swarm] {
+				return fmt.Errorf("wrong swarm option: %s", opts.swarm)
+			}
+
+			return runServerInit(cmd.Context(), in, cmd.OutOrStdout(), opts)
+		},
+	}
+
+	cmd.Flags().IntVarP(&opts.port, "port", "p", 22, "SSH port")
+	cmd.Flags().StringVarP(&opts.user, "user", "u", "root", "SSH user for initial connection")
+	cmd.Flags().StringVarP(&opts.key, "key", "i", "", "path to SSH private key")
+	cmd.Flags().BoolVar(&opts.disablePasswordAuth, "disable-password-auth", false, "disable SSH password auth after setup")
+	cmd.Flags().StringVar(&opts.swarm, "swarm", InitSwarmManger, "")
+	cmd.Flags().BoolVar(&opts.dockerUser, "with-docker-user", true, "")
+	cmd.Flags().BoolVar(&opts.dryRun, "dry-run", false, "print what would be done without making changes")
+
+	cmd.Flags().StringVar(&opts.deployerUser, "deployer-user", "deployer", "deployer username")
+
+	return cmd
+}
+
+const (
+	InitSwarmNone   = "none"
+	InitSwarmManger = "manager"
+	InitSwarmWorker = "worker"
+)
+
+var initSwarmMap = map[string]bool{
+	InitSwarmNone:   true,
+	InitSwarmManger: true,
+	InitSwarmWorker: true,
+}
+
+type serverInitOptions struct {
+	host                string
+	port                int
+	user                string
+	key                 string
+	disablePasswordAuth bool
+	dockerUser          bool
+	swarm               string
+	deployerUser        string
+	worker              bool
+	dryRun              bool
+}
+
 func runServerInit(ctx context.Context, in *os.File, out io.Writer, opts serverInitOptions) error {
 	sudo := opts.user != "root"
 
 	homeDir, _ := os.UserHomeDir()
 	rootKeyPath := filepath.Join(homeDir, ".ssh", opts.host+"-"+opts.user)
 
-	if opts.rootKey == "" {
+	if opts.key == "" {
 		if _, err := os.Stat(rootKeyPath); err == nil {
-			opts.rootKey = rootKeyPath
+			opts.key = rootKeyPath
 		}
 	}
 
@@ -387,8 +423,8 @@ func runServerInit(ctx context.Context, in *os.File, out io.Writer, opts serverI
 	var err error
 
 	fmt.Fprintf(out, "Connecting to %s@%s:%d...\n", opts.user, opts.host, opts.port)
-	if opts.rootKey != "" {
-		keyData, err := os.ReadFile(opts.rootKey)
+	if opts.key != "" {
+		keyData, err := os.ReadFile(opts.key)
 		if err != nil {
 			return fmt.Errorf("failed to read key file: %w", err)
 		}
@@ -403,41 +439,27 @@ func runServerInit(ctx context.Context, in *os.File, out io.Writer, opts serverI
 		password := string(passwordBytes)
 
 		client, err = ssh.DialWithPassword(opts.host, opts.port, opts.user, password)
-
 	}
 	if err != nil {
 		return fmt.Errorf("failed to connect: %w", err)
 	}
 	defer client.Close()
 
-	if opts.rootKey == "" {
+	if opts.key == "" {
 		fmt.Fprintln(out, "Generating SSH key...")
 		if !opts.dryRun {
-			privKey, pk, err := ssh.GenerateEd25519KeyPair()
+			pkey, pub, err := ssh.GenerateEd25519KeyPair()
 			if err != nil {
 				return fmt.Errorf("failed to generate key: %w", err)
 			}
+			opts.key = pkey
 
 			fmt.Fprintf(out, "Saving key to %s...\n", rootKeyPath)
-			if err := os.WriteFile(rootKeyPath, []byte(privKey), 0o600); err != nil {
+			if err := os.WriteFile(rootKeyPath, []byte(pkey), 0o600); err != nil {
 				return fmt.Errorf("failed to save key: %w", err)
 			}
-			if err := ensureAuthorizedKey(client, sudo, opts.user, pk); err != nil {
+			if err := ensureAuthorizedKey(client, sudo, opts.user, pub); err != nil {
 				return fmt.Errorf("failed to install key: %w", err)
-			}
-		}
-	}
-
-	stdout, _, err := ssh.Run(client, "docker --version", sudo)
-	if err != nil {
-		return err
-	}
-	if stdout == "" {
-		fmt.Fprintln(out, "Installing Docker...")
-		if !opts.dryRun {
-			_, stderr, err := ssh.Run(client, "curl -fsSL https://get.docker.com | sh && systemctl enable docker.service && systemctl enable containerd.service", sudo)
-			if err != nil || stderr != "" {
-				return errors.New(strings.Join([]string{err.Error(), stderr}, "\n"))
 			}
 		}
 	}
@@ -454,57 +476,41 @@ func runServerInit(ctx context.Context, in *os.File, out io.Writer, opts serverI
 
 	server := config.Servers[opts.host]
 	server.Port = opts.port
-	if server.User != opts.deployerUser {
-		server.Key = ""
-	}
-	server.User = opts.deployerUser
 
-	_, stderr, err := ssh.Run(client, fmt.Sprintf("id %s", server.User), false)
-	if err != nil {
-		return err
-	}
-	if stderr != "" {
+	if opts.dockerUser {
 		fmt.Fprintf(out, "Creating user '%s'...\n", server.User)
-		if !opts.dryRun {
-			_, stderr, err := ssh.Run(client, fmt.Sprintf("adduser --disabled-password --comment '' %s", server.User), sudo)
-			if err != nil || stderr != "" {
-				return errors.New(strings.Join([]string{err.Error(), stderr}, "\n"))
-			}
-		}
-	}
 
-	var publicKey string
-	if server.Key == "" {
-		private, public, err := ssh.GenerateEd25519KeyPair()
-		if err != nil {
-			return fmt.Errorf("failed to generate key: %w", err)
+		if server.User != DockerUser {
+			server.Key = ""
 		}
-		server.Key = private
-		publicKey = public
-	} else {
-		signer, err := gossh.ParsePrivateKey([]byte(server.Key))
+
+		pkey, pub, err := createDockerUser(client, server.Key, sudo, opts.dryRun)
 		if err != nil {
 			return err
 		}
-		publicKey = strings.TrimSpace(string(gossh.MarshalAuthorizedKey(signer.PublicKey())))
 
-		if keyInstalled(client, server.User, publicKey) {
-			publicKey = ""
-		}
-	}
+		server.User = DockerUser
+		server.Key = pkey
 
-	if publicKey != "" {
 		if !opts.dryRun {
-			if err := ensureAuthorizedKey(client, sudo, server.User, publicKey); err != nil {
-				return fmt.Errorf("failed to install key: %w", err)
+			config.Servers[opts.host] = server
+			if err := vault.SaveConfig(cwd, config); err != nil {
+				return err
+			}
+
+			if err := ensureAuthorizedKey(client, sudo, server.User, pub); err != nil {
+				return err
 			}
 		}
-	}
 
-	if !opts.dryRun {
-		_, stderr, err := ssh.Run(client, fmt.Sprintf("usermod -aG docker %s", opts.deployerUser), sudo)
-		if err != nil || stderr != "" {
-			return errors.New(strings.Join([]string{err.Error(), stderr}, "\n"))
+	} else {
+		server.User = opts.user
+		server.Key = opts.key
+
+		if !opts.dryRun {
+			if err := vault.SaveConfig(cwd, config); err != nil {
+				return fmt.Errorf("failed to save config: %w", err)
+			}
 		}
 	}
 
@@ -518,23 +524,76 @@ func runServerInit(ctx context.Context, in *os.File, out io.Writer, opts serverI
 		}
 	}
 
-	config.Servers[opts.host] = server
-
-	if err := joinSwarm(ctx, opts.host, config.Servers, opts.worker, opts.dryRun); err != nil {
+	if err := setupDocker(client, out, server.User, sudo, opts.dryRun); err != nil {
 		return err
 	}
 
-	fmt.Fprintln(out, "Saving configuration...")
-	if !opts.dryRun {
-		if err := vault.SaveConfig(cwd, config); err != nil {
-			return fmt.Errorf("failed to save config: %w", err)
-		}
+	if err := joinSwarm(ctx, opts.host, config.Servers, opts.worker, opts.dryRun); err != nil {
+		return err
 	}
 
 	if opts.dryRun {
 		fmt.Fprintln(out, "\nDry run complete. No changes were made.")
 	} else {
 		fmt.Fprintf(out, "\nServer '%s' initialized successfully.\n", opts.host)
+	}
+
+	return nil
+}
+
+const (
+	DockerUser = "cicdez"
+)
+
+func createDockerUser(client *gossh.Client, pkey string, sudo, dry bool) (string, string, error) {
+	_, stderr, err := ssh.Run(client, fmt.Sprintf("id %s", DockerUser), false)
+	if err != nil {
+		return "", "", err
+	}
+	if stderr != "" {
+		if !dry {
+			_, stderr, err := ssh.Run(client, fmt.Sprintf("adduser --disabled-password --comment '' %s", DockerUser), sudo)
+			if err != nil || stderr != "" {
+				return "", "", errors.New(strings.Join([]string{err.Error(), stderr}, "\n"))
+			}
+		}
+	}
+
+	if pkey == "" {
+		private, public, err := ssh.GenerateEd25519KeyPair()
+		if err != nil {
+			return "", "", fmt.Errorf("failed to generate key: %w", err)
+		}
+		return private, public, nil
+	}
+
+	signer, err := gossh.ParsePrivateKey([]byte(pkey))
+	if err != nil {
+		return "", "", err
+	}
+	return pkey, strings.TrimSpace(string(gossh.MarshalAuthorizedKey(signer.PublicKey()))), nil
+}
+
+func setupDocker(client *gossh.Client, out io.Writer, user string, sudo, dry bool) error {
+	stdout, _, err := ssh.Run(client, "docker --version", sudo)
+	if err != nil {
+		return err
+	}
+	if stdout == "" {
+		fmt.Fprintln(out, "Installing Docker...")
+		if !dry {
+			_, stderr, err := ssh.Run(client, "curl -fsSL https://get.docker.com | sh && systemctl enable docker.service && systemctl enable containerd.service", sudo)
+			if err != nil || stderr != "" {
+				return errors.New(strings.Join([]string{err.Error(), stderr}, "\n"))
+			}
+		}
+	}
+
+	if !dry {
+		_, stderr, err := ssh.Run(client, fmt.Sprintf("usermod -aG docker %s", user), sudo)
+		if err != nil || stderr != "" {
+			return errors.New(strings.Join([]string{err.Error(), stderr}, "\n"))
+		}
 	}
 
 	return nil
