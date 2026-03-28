@@ -204,16 +204,23 @@ func runServerAdd(ctx context.Context, in *os.File, out io.Writer, opts serverAd
 	if info.Info.Swarm.LocalNodeState == swarm.LocalNodeStateActive {
 		var clusterId string
 		for host, server := range config.Servers {
-			node, err := docker.NewClientSSH(host, server.Port, server.User, server.Key)
-			if err != nil {
-				return err
-			}
+			err = func() error {
+				node, err := docker.NewClientSSH(host, server.Port, server.User, server.Key)
+				if err != nil {
+					return err
+				}
+				defer node.Close()
 
-			info, err := node.Info(ctx, client.InfoOptions{})
+				info, err := node.Info(ctx, client.InfoOptions{})
+				if err != nil {
+					return err
+				}
+				clusterId = info.Info.Swarm.Cluster.ID
+				return nil
+			}()
 			if err != nil {
 				return err
 			}
-			clusterId = info.Info.Swarm.Cluster.ID
 			break
 		}
 
