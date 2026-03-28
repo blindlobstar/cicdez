@@ -328,20 +328,21 @@ func newServerRemoveCommand() *cobra.Command {
 		Short:   "Remove a server",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			opts.name = args[0]
+			opts.host = args[0]
 			return runServerRemove(cmd.Context(), cmd.OutOrStdout(), opts)
 		},
 	}
+	cmd.Flags().BoolVar(&opts.soft, "soft", false, "remove from config without leaving swarm")
 
 	return cmd
 }
 
 type serverRemoveOptions struct {
-	name string
+	host string
+	soft bool
 }
 
 // TODO: force flag
-// TODO: soft flag. remove server from config without leaving a cluster
 func runServerRemove(ctx context.Context, out io.Writer, opts serverRemoveOptions) error {
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -353,13 +354,20 @@ func runServerRemove(ctx context.Context, out io.Writer, opts serverRemoveOption
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	server, exists := config.Servers[opts.name]
+	server, exists := config.Servers[opts.host]
 	if !exists {
-		return fmt.Errorf("server '%s' not found", opts.name)
+		return fmt.Errorf("server '%s' not found", opts.host)
 	}
-	delete(config.Servers, opts.name)
+	delete(config.Servers, opts.host)
 
-	node, err := docker.NewClientSSH(opts.name, server.Port, server.User, server.Key)
+	if opts.soft {
+		if err := vault.SaveConfig(cwd, config); err != nil {
+			return err
+		}
+		return nil
+	}
+
+	node, err := docker.NewClientSSH(opts.host, server.Port, server.User, server.Key)
 	if err != nil {
 		return err
 	}
@@ -441,7 +449,7 @@ wait:
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 
-	fmt.Fprintf(out, "Server '%s' removed\n", opts.name)
+	fmt.Fprintf(out, "Server '%s' removed\n", opts.host)
 	return nil
 }
 
