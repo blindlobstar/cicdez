@@ -14,7 +14,6 @@ func TestGenerateEd25519KeyPair(t *testing.T) {
 	}
 	privateKey, publicKey := string(private), string(public)
 
-	// Check private key format
 	if !strings.HasPrefix(privateKey, "-----BEGIN OPENSSH PRIVATE KEY-----") {
 		t.Error("private key should start with PEM header")
 	}
@@ -22,18 +21,15 @@ func TestGenerateEd25519KeyPair(t *testing.T) {
 		t.Error("private key should end with PEM footer")
 	}
 
-	// Check public key format
 	if !strings.HasPrefix(publicKey, "ssh-ed25519 ") {
 		t.Error("public key should be in ssh-ed25519 format")
 	}
 
-	// Verify the private key can be parsed
 	signer, err := ssh.ParsePrivateKey([]byte(privateKey))
 	if err != nil {
 		t.Fatalf("failed to parse generated private key: %v", err)
 	}
 
-	// Verify the public keys match
 	generatedPubKey := string(ssh.MarshalAuthorizedKey(signer.PublicKey()))
 	if strings.TrimSpace(generatedPubKey) != strings.TrimSpace(publicKey) {
 		t.Error("public key from private key doesn't match returned public key")
