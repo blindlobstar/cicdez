@@ -121,6 +121,8 @@ func runServerAdd(ctx context.Context, in *os.File, out io.Writer, opts serverAd
 			}
 			password := string(passwordBytes)
 
+			fmt.Fprintln(out, "")
+
 			client, err = ssh.DialWithPassword(opts.host, server.Port, server.User, password)
 		}
 		if err != nil {
