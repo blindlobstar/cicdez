@@ -16,7 +16,6 @@ import (
 	"github.com/blindlobstar/cicdez/internal/vault"
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/client"
-	dockerclient "github.com/moby/moby/client"
 	"github.com/spf13/cobra"
 	gossh "golang.org/x/crypto/ssh"
 	"golang.org/x/term"
@@ -116,9 +115,9 @@ func runServerAdd(ctx context.Context, in *os.File, out io.Writer, opts serverAd
 		} else {
 			fmt.Fprintf(out, "Enter password for %s: ", opts.user)
 
-			passwordBytes, err := term.ReadPassword(int(in.Fd()))
-			if err != nil {
-				return fmt.Errorf("failed to read password: %w", err)
+			passwordBytes, passErr := term.ReadPassword(int(in.Fd()))
+			if passErr != nil {
+				return fmt.Errorf("failed to read password: %w", passErr)
 			}
 			password := string(passwordBytes)
 
@@ -197,7 +196,7 @@ func runServerAdd(ctx context.Context, in *os.File, out io.Writer, opts serverAd
 		return err
 	}
 
-	info, err := node.Info(ctx, dockerclient.InfoOptions{})
+	info, err := node.Info(ctx, client.InfoOptions{})
 	if err != nil {
 		return err
 	}
@@ -210,7 +209,7 @@ func runServerAdd(ctx context.Context, in *os.File, out io.Writer, opts serverAd
 				return err
 			}
 
-			info, err := node.Info(ctx, dockerclient.InfoOptions{})
+			info, err := node.Info(ctx, client.InfoOptions{})
 			if err != nil {
 				return err
 			}
@@ -223,7 +222,7 @@ func runServerAdd(ctx context.Context, in *os.File, out io.Writer, opts serverAd
 		}
 	} else if len(config.Servers) == 0 {
 		if !opts.dryRun {
-			_, err := node.SwarmInit(ctx, dockerclient.SwarmInitOptions{
+			_, err := node.SwarmInit(ctx, client.SwarmInitOptions{
 				AdvertiseAddr: opts.host,
 			})
 			if err != nil {
@@ -236,7 +235,7 @@ func runServerAdd(ctx context.Context, in *os.File, out io.Writer, opts serverAd
 			return err
 		}
 
-		inspect, err := manager.SwarmInspect(ctx, dockerclient.SwarmInspectOptions{})
+		inspect, err := manager.SwarmInspect(ctx, client.SwarmInspectOptions{})
 		if err != nil {
 			return err
 		}
@@ -247,7 +246,7 @@ func runServerAdd(ctx context.Context, in *os.File, out io.Writer, opts serverAd
 		}
 
 		if !opts.dryRun {
-			if _, err := node.SwarmJoin(ctx, dockerclient.SwarmJoinOptions{
+			if _, err := node.SwarmJoin(ctx, client.SwarmJoinOptions{
 				AdvertiseAddr: opts.host,
 				RemoteAddrs:   []string{mhost},
 				JoinToken:     token,
@@ -371,7 +370,7 @@ func runServerRemove(ctx context.Context, out io.Writer, opts serverRemoveOption
 		return err
 	}
 
-	info, err := node.Info(ctx, dockerclient.InfoOptions{})
+	info, err := node.Info(ctx, client.InfoOptions{})
 	if err != nil {
 		return err
 	}
@@ -384,7 +383,7 @@ func runServerRemove(ctx context.Context, out io.Writer, opts serverRemoveOption
 		return err
 	}
 
-	ni, err := manager.NodeInspect(ctx, nodeID, dockerclient.NodeInspectOptions{})
+	ni, err := manager.NodeInspect(ctx, nodeID, client.NodeInspectOptions{})
 	if err != nil {
 		return err
 	}
@@ -393,7 +392,7 @@ func runServerRemove(ctx context.Context, out io.Writer, opts serverRemoveOption
 	}
 	ni.Node.Spec.Availability = swarm.NodeAvailabilityDrain
 
-	_, err = manager.NodeUpdate(ctx, nodeID, dockerclient.NodeUpdateOptions{
+	_, err = manager.NodeUpdate(ctx, nodeID, client.NodeUpdateOptions{
 		Version: ni.Node.Version,
 		Spec:    ni.Node.Spec,
 	})
@@ -417,7 +416,7 @@ wait:
 		case <-cctx.Done():
 			return cctx.Err()
 		case <-t.C:
-			tasks, err := node.TaskList(cctx, dockerclient.TaskListOptions{
+			tasks, err := node.TaskList(cctx, client.TaskListOptions{
 				Filters: filters,
 			})
 			if err != nil {
@@ -430,14 +429,14 @@ wait:
 		}
 	}
 
-	_, err = node.SwarmLeave(ctx, dockerclient.SwarmLeaveOptions{
+	_, err = node.SwarmLeave(ctx, client.SwarmLeaveOptions{
 		Force: false,
 	})
 	if err != nil {
 		return err
 	}
 
-	_, err = manager.NodeRemove(ctx, nodeID, dockerclient.NodeRemoveOptions{
+	_, err = manager.NodeRemove(ctx, nodeID, client.NodeRemoveOptions{
 		Force: false,
 	})
 	if err != nil {
