@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/blindlobstar/cicdez/internal/docker"
@@ -173,7 +172,7 @@ func runServerAdd(ctx context.Context, in *os.File, out io.Writer, opts serverAd
 			if !opts.dryRun {
 				_, stderr, err := ssh.Run(client, "sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config && systemctl restart sshd", true)
 				if err != nil || stderr != "" {
-					return errors.New(strings.Join([]string{err.Error(), stderr}, "\n"))
+					return errors.Join(err, errors.New(stderr))
 				}
 			}
 		}
@@ -467,7 +466,7 @@ func createDockerUser(client *gossh.Client, out io.Writer, dry bool) error {
 		if !dry {
 			_, stderr, err := ssh.Run(client, fmt.Sprintf("adduser --disabled-password --comment '' %s", DockerUser), true)
 			if err != nil || stderr != "" {
-				return errors.New(strings.Join([]string{err.Error(), stderr}, "\n"))
+				return errors.Join(err, errors.New(stderr))
 			}
 		}
 	}
@@ -485,7 +484,7 @@ func setupDocker(client *gossh.Client, out io.Writer, user string, dry bool) err
 		if !dry {
 			_, stderr, err := ssh.Run(client, "curl -fsSL https://get.docker.com | sh && systemctl enable docker.service && systemctl enable containerd.service", true)
 			if err != nil || stderr != "" {
-				return errors.New(strings.Join([]string{err.Error(), stderr}, "\n"))
+				return errors.Join(err, errors.New(stderr))
 			}
 		}
 	}
@@ -494,7 +493,7 @@ func setupDocker(client *gossh.Client, out io.Writer, user string, dry bool) err
 	if !dry {
 		_, stderr, err := ssh.Run(client, fmt.Sprintf("usermod -aG docker %s", user), true)
 		if err != nil || stderr != "" {
-			return errors.New(strings.Join([]string{err.Error(), stderr}, "\n"))
+			return errors.Join(err, errors.New(stderr))
 		}
 	}
 
@@ -513,7 +512,7 @@ func ensureAuthorizedKey(client *gossh.Client, user string, public []byte) error
 		sshDir, public, sshDir, public, sshDir, user, user, sshDir, sshDir, sshDir)
 	_, stderr, err := ssh.Run(client, script, true)
 	if err != nil || stderr != "" {
-		return errors.New(strings.Join([]string{err.Error(), stderr}, "\n"))
+		return errors.Join(err, errors.New(stderr))
 	}
 	return nil
 }
