@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -83,27 +84,25 @@ type serverAddOptions struct {
 
 // TODO: leave flag - leave cluster to join
 func runServerAdd(ctx context.Context, in *os.File, out io.Writer, opts serverAddOptions) error {
-	var key []byte
+	server := vault.Server{
+		User: opts.user,
+		Port: opts.port,
+	}
+
 	if opts.keyFile != "" {
 		data, err := os.ReadFile(opts.keyFile)
 		if err != nil {
 			return fmt.Errorf("failed to read key file: %w", err)
 		}
-		key = data
-	}
-
-	server := vault.Server{
-		User: opts.user,
-		Key:  string(key),
-		Port: opts.port,
+		server.Key = data
 	}
 
 	if opts.setup {
 		homeDir, _ := os.UserHomeDir()
 		rootKeyPath := filepath.Join(homeDir, ".ssh", opts.host+"-"+server.User)
 
-		if _, err := os.Stat(rootKeyPath); err == nil && len(key) == 0 {
-			key, err = os.ReadFile(rootKeyPath)
+		if _, err := os.Stat(rootKeyPath); err == nil && len(server.Key) == 0 {
+			server.Key, err = os.ReadFile(rootKeyPath)
 			if err != nil {
 				return fmt.Errorf("failed to read key file: %w", err)
 			}
@@ -113,8 +112,8 @@ func runServerAdd(ctx context.Context, in *os.File, out io.Writer, opts serverAd
 		var err error
 
 		fmt.Fprintf(out, "Connecting to %s@%s:%d...\n", server.User, opts.host, server.Port)
-		if len(key) > 0 {
-			client, err = ssh.DialWithKey(opts.host, server.Port, server.User, key)
+		if len(server.Key) > 0 {
+			client, err = ssh.DialWithKey(opts.host, server.Port, server.User, server.Key)
 		} else {
 			fmt.Fprintf(out, "Enter password for %s: ", opts.user)
 
@@ -131,20 +130,20 @@ func runServerAdd(ctx context.Context, in *os.File, out io.Writer, opts serverAd
 		}
 		defer client.Close()
 
-		if len(key) == 0 {
+		if len(server.Key) == 0 {
 			fmt.Fprintln(out, "Generating SSH key...")
 			if !opts.dryRun {
-				pkey, pub, err := ssh.GenerateEd25519KeyPair()
+				var public []byte
+				server.Key, public, err = ssh.GenerateEd25519KeyPair()
 				if err != nil {
 					return fmt.Errorf("failed to generate key: %w", err)
 				}
-				key = []byte(pkey)
 
 				fmt.Fprintf(out, "Saving key to %s...\n", rootKeyPath)
-				if err := os.WriteFile(rootKeyPath, key, 0o600); err != nil {
+				if err := os.WriteFile(rootKeyPath, server.Key, 0o600); err != nil {
 					return fmt.Errorf("failed to save key: %w", err)
 				}
-				if err := ensureAuthorizedKey(client, server.User, pub); err != nil {
+				if err := ensureAuthorizedKey(client, server.User, public); err != nil {
 					return fmt.Errorf("failed to install key: %w", err)
 				}
 			}
@@ -157,7 +156,7 @@ func runServerAdd(ctx context.Context, in *os.File, out io.Writer, opts serverAd
 
 		server.User = DockerUser
 
-		var public string
+		var public []byte
 		server.Key, public, err = ssh.GenerateEd25519KeyPair()
 		if err != nil {
 			return fmt.Errorf("failed to generate key: %w", err)
@@ -194,7 +193,7 @@ func runServerAdd(ctx context.Context, in *os.File, out io.Writer, opts serverAd
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	node, err := docker.NewClientSSH(opts.host, server.Port, server.User, []byte(server.Key))
+	node, err := docker.NewClientSSH(opts.host, server.Port, server.User, server.Key)
 	if err != nil {
 		return err
 	}
@@ -207,7 +206,7 @@ func runServerAdd(ctx context.Context, in *os.File, out io.Writer, opts serverAd
 	if info.Info.Swarm.LocalNodeState == swarm.LocalNodeStateActive {
 		var clusterId string
 		for host, server := range config.Servers {
-			node, err := docker.NewClientSSH(host, server.Port, server.User, []byte(server.Key))
+			node, err := docker.NewClientSSH(host, server.Port, server.User, server.Key)
 			if err != nil {
 				return err
 			}
@@ -313,7 +312,7 @@ func runServerList(out io.Writer) error {
 		}
 		fmt.Fprintf(out, "\tHost: %s:%d\n", host, port)
 		fmt.Fprintf(out, "\tUser: %s\n", server.User)
-		if server.Key != "" {
+		if len(server.Key) > 0 {
 			fmt.Fprintln(out, "\tKey: <configured>")
 		}
 	}
@@ -359,7 +358,7 @@ func runServerRemove(ctx context.Context, out io.Writer, opts serverRemoveOption
 		return fmt.Errorf("server '%s' not found", opts.name)
 	}
 
-	node, err := docker.NewClientSSH(opts.name, server.Port, server.User, []byte(server.Key))
+	node, err := docker.NewClientSSH(opts.name, server.Port, server.User, server.Key)
 	if err != nil {
 		return err
 	}
@@ -495,15 +494,16 @@ func setupDocker(client *gossh.Client, out io.Writer, user string, dry bool) err
 	return nil
 }
 
-func ensureAuthorizedKey(client *gossh.Client, user, pubKey string) error {
+func ensureAuthorizedKey(client *gossh.Client, user string, public []byte) error {
 	home := "/root"
 	if user != "root" {
 		home = "/home/" + user
 	}
 	sshDir := home + "/.ssh"
-	pubKey = strings.TrimSpace(pubKey)
+
+	public = bytes.TrimSpace(public)
 	script := fmt.Sprintf(`mkdir -p %s && (grep -qF '%s' %s/authorized_keys 2>/dev/null || echo '%s' >> %s/authorized_keys) && chown -R %s:%s %s && chmod 700 %s && chmod 600 %s/authorized_keys`,
-		sshDir, pubKey, sshDir, pubKey, sshDir, user, user, sshDir, sshDir, sshDir)
+		sshDir, public, sshDir, public, sshDir, user, user, sshDir, sshDir, sshDir)
 	_, stderr, err := ssh.Run(client, script, true)
 	if err != nil || stderr != "" {
 		return errors.New(strings.Join([]string{err.Error(), stderr}, "\n"))

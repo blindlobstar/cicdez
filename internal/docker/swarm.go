@@ -16,7 +16,7 @@ func GetManagerClient(ctx context.Context, servers map[string]vault.Server, excl
 		if slices.Contains(exclude, host) {
 			continue
 		}
-		manager, err := NewClientSSH(host, server.Port, server.User, []byte(server.Key))
+		manager, err := NewClientSSH(host, server.Port, server.User, server.Key)
 		if err != nil {
 			return nil, "", err
 		}
