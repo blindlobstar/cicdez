@@ -3,7 +3,6 @@ package docker
 import (
 	"context"
 	"errors"
-	"slices"
 
 	"github.com/blindlobstar/cicdez/internal/vault"
 	"github.com/moby/moby/client"
@@ -11,11 +10,8 @@ import (
 
 var ErrManagerNotFound = errors.New("manager not found")
 
-func GetManagerClient(ctx context.Context, servers map[string]vault.Server, exclude ...string) (client.APIClient, string, error) {
+func GetManagerClient(ctx context.Context, servers map[string]vault.Server) (client.APIClient, string, error) {
 	for host, server := range servers {
-		if slices.Contains(exclude, host) {
-			continue
-		}
 		manager, err := NewClientSSH(host, server.Port, server.User, server.Key)
 		if err != nil {
 			return nil, "", err
