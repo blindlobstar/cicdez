@@ -357,6 +357,7 @@ func runServerRemove(ctx context.Context, out io.Writer, opts serverRemoveOption
 	if !exists {
 		return fmt.Errorf("server '%s' not found", opts.name)
 	}
+	delete(config.Servers, opts.name)
 
 	node, err := docker.NewClientSSH(opts.name, server.Port, server.User, server.Key)
 	if err != nil {
@@ -371,7 +372,7 @@ func runServerRemove(ctx context.Context, out io.Writer, opts serverRemoveOption
 	worker := !info.Info.Swarm.ControlAvailable
 
 	// TODO: trying to remove only manager node
-	manager, _, err := docker.GetManagerClient(ctx, config.Servers, opts.name)
+	manager, _, err := docker.GetManagerClient(ctx, config.Servers)
 	if err != nil {
 		return err
 	}
@@ -435,8 +436,6 @@ wait:
 	if err != nil {
 		return err
 	}
-
-	delete(config.Servers, opts.name)
 
 	if err := vault.SaveConfig(cwd, config); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
