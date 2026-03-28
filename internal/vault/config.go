@@ -20,7 +20,7 @@ type Config struct {
 type Server struct {
 	Port int    `yaml:"port,omitempty"`
 	User string `yaml:"user"`
-	Key  string `yaml:"key"`
+	Key  []byte `yaml:"key"`
 }
 
 func LoadConfig(path string) (Config, error) {

@@ -8,10 +8,11 @@ import (
 )
 
 func TestGenerateEd25519KeyPair(t *testing.T) {
-	privateKey, publicKey, err := GenerateEd25519KeyPair()
+	private, public, err := GenerateEd25519KeyPair()
 	if err != nil {
 		t.Fatalf("GenerateEd25519KeyPair failed: %v", err)
 	}
+	privateKey, publicKey := string(private), string(public)
 
 	// Check private key format
 	if !strings.HasPrefix(privateKey, "-----BEGIN OPENSSH PRIVATE KEY-----") {
@@ -50,7 +51,7 @@ func TestGenerateEd25519KeyPair_Uniqueness(t *testing.T) {
 		t.Fatalf("second key generation failed: %v", err)
 	}
 
-	if key1 == key2 {
+	if string(key1) == string(key2) {
 		t.Error("generated keys should be unique")
 	}
 }
