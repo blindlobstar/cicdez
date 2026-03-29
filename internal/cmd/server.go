@@ -265,6 +265,9 @@ func runServerAdd(ctx context.Context, in *os.File, out io.Writer, opts serverAd
 		}
 	}
 
+	if config.Servers == nil {
+		config.Servers = make(map[string]vault.Server)
+	}
 	config.Servers[opts.host] = server
 	if !opts.dryRun {
 		if err := vault.SaveConfig(cwd, config); err != nil {
@@ -465,43 +468,42 @@ const (
 )
 
 func createDockerUser(client *gossh.Client, out io.Writer, dry bool) error {
-	_, stderr, err := ssh.Run(client, fmt.Sprintf("id %s", DockerUser), false)
-	if err != nil {
-		return err
-	}
-	if stderr != "" {
+	_, _, err := ssh.Run(client, fmt.Sprintf("id %s", DockerUser), false)
+	var exitErr *gossh.ExitError
+	if errors.As(err, &exitErr) {
 		fmt.Fprintf(out, "Creating %s user...\n", DockerUser)
 		if !dry {
-			_, stderr, err := ssh.Run(client, fmt.Sprintf("adduser --disabled-password --comment '' %s", DockerUser), true)
-			if err != nil || stderr != "" {
-				return errors.Join(err, errors.New(stderr))
+			_, _, err := ssh.Run(client, fmt.Sprintf("adduser --disabled-password --comment '' %s", DockerUser), true)
+			if err != nil {
+				return err
 			}
 		}
+		return nil
 	}
-
-	return nil
+	return err
 }
 
 func setupDocker(client *gossh.Client, out io.Writer, user string, dry bool) error {
-	stdout, _, err := ssh.Run(client, "docker --version", true)
-	if err != nil {
-		return err
-	}
-	if stdout == "" {
+	_, _, err := ssh.Run(client, "docker --version", true)
+	var exitErr *gossh.ExitError
+	if errors.As(err, &exitErr) {
 		fmt.Fprintln(out, "Installing Docker...")
 		if !dry {
-			_, stderr, err := ssh.Run(client, "curl -fsSL https://get.docker.com | sh && systemctl enable docker.service && systemctl enable containerd.service", true)
-			if err != nil || stderr != "" {
-				return errors.Join(err, errors.New(stderr))
+			_, _, err := ssh.Run(client, "curl -fsSL https://get.docker.com | sh && systemctl enable docker.service && systemctl enable containerd.service", true)
+			if err != nil {
+				return err
 			}
 		}
+		return nil
+	} else if err != nil {
+		return err
 	}
 
 	fmt.Fprintf(out, "Adding %s to docker group...\n", user)
 	if !dry {
-		_, stderr, err := ssh.Run(client, fmt.Sprintf("usermod -aG docker %s", user), true)
-		if err != nil || stderr != "" {
-			return errors.Join(err, errors.New(stderr))
+		_, _, err := ssh.Run(client, fmt.Sprintf("usermod -aG docker %s", user), true)
+		if err != nil {
+			return err
 		}
 	}
 
