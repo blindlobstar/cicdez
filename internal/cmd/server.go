@@ -378,6 +378,8 @@ func runServerRemove(ctx context.Context, out io.Writer, opts serverRemoveOption
 	worker := !info.Info.Swarm.ControlAvailable
 
 	// TODO: trying to remove only manager node
+	// need check other nodes to find manager
+	// if other manager exists we could force leave swarm
 	manager, _, err := docker.GetManagerClient(ctx, config.Servers)
 	if err != nil {
 		return err
