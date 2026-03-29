@@ -232,6 +232,7 @@ func runServerAdd(ctx context.Context, in *os.File, out io.Writer, opts serverAd
 	} else if len(config.Servers) == 0 {
 		if !opts.dryRun {
 			_, err := node.SwarmInit(ctx, client.SwarmInitOptions{
+				ListenAddr:    "0.0.0.0",
 				AdvertiseAddr: opts.host,
 			})
 			if err != nil {
@@ -257,6 +258,7 @@ func runServerAdd(ctx context.Context, in *os.File, out io.Writer, opts serverAd
 		if !opts.dryRun {
 			if _, err := node.SwarmJoin(ctx, client.SwarmJoinOptions{
 				AdvertiseAddr: opts.host,
+				ListenAddr:    "0.0.0.0",
 				RemoteAddrs:   []string{mhost},
 				JoinToken:     token,
 			}); err != nil {
