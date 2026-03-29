@@ -54,7 +54,6 @@ func newServerAddCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&opts.setup, "setup", false, "provision fresh server")
 	cmd.Flags().StringVar(&opts.role, "role", AddSwarmManager, "role in swarm")
 	cmd.Flags().BoolVar(&opts.disablePasswordAuth, "disable-password-auth", false, "disable SSH password auth (requires --setup)")
-	cmd.Flags().BoolVar(&opts.dryRun, "dry-run", false, "print what would be done without making changes")
 
 	return cmd
 }
@@ -77,7 +76,6 @@ type serverAddOptions struct {
 	role                string
 	setup               bool
 	disablePasswordAuth bool
-	dryRun              bool
 }
 
 // TODO: leave flag - leave cluster to join
@@ -132,24 +130,22 @@ func runServerAdd(ctx context.Context, in *os.File, out io.Writer, opts serverAd
 
 		if len(server.Key) == 0 {
 			fmt.Fprintln(out, "Generating SSH key...")
-			if !opts.dryRun {
-				var public []byte
-				server.Key, public, err = ssh.GenerateEd25519KeyPair()
-				if err != nil {
-					return fmt.Errorf("failed to generate key: %w", err)
-				}
+			var public []byte
+			server.Key, public, err = ssh.GenerateEd25519KeyPair()
+			if err != nil {
+				return fmt.Errorf("failed to generate key: %w", err)
+			}
 
-				fmt.Fprintf(out, "Saving key to %s...\n", rootKeyPath)
-				if err := os.WriteFile(rootKeyPath, server.Key, 0o600); err != nil {
-					return fmt.Errorf("failed to save key: %w", err)
-				}
-				if err := ensureAuthorizedKey(client, server.User, public); err != nil {
-					return fmt.Errorf("failed to install key: %w", err)
-				}
+			fmt.Fprintf(out, "Saving key to %s...\n", rootKeyPath)
+			if err := os.WriteFile(rootKeyPath, server.Key, 0o600); err != nil {
+				return fmt.Errorf("failed to save key: %w", err)
+			}
+			if err := ensureAuthorizedKey(client, server.User, public); err != nil {
+				return fmt.Errorf("failed to install key: %w", err)
 			}
 		}
 
-		err = createDockerUser(client, out, opts.dryRun)
+		err = createDockerUser(client, out)
 		if err != nil {
 			return err
 		}
@@ -162,23 +158,19 @@ func runServerAdd(ctx context.Context, in *os.File, out io.Writer, opts serverAd
 			return fmt.Errorf("failed to generate key: %w", err)
 		}
 
-		if !opts.dryRun {
-			if err := ensureAuthorizedKey(client, server.User, public); err != nil {
-				return err
-			}
+		if err := ensureAuthorizedKey(client, server.User, public); err != nil {
+			return err
 		}
 
 		if opts.disablePasswordAuth {
 			fmt.Fprintln(out, "Disabling password authentication...")
-			if !opts.dryRun {
-				_, stderr, err := ssh.Run(client, "sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config && systemctl restart sshd", true)
-				if err != nil || stderr != "" {
-					return errors.Join(err, errors.New(stderr))
-				}
+			_, stderr, err := ssh.Run(client, "sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config && systemctl restart sshd", true)
+			if err != nil || stderr != "" {
+				return errors.Join(err, errors.New(stderr))
 			}
 		}
 
-		if err := setupDocker(client, out, server.User, opts.dryRun); err != nil {
+		if err := setupDocker(client, out, server.User); err != nil {
 			return err
 		}
 	}
@@ -230,14 +222,12 @@ func runServerAdd(ctx context.Context, in *os.File, out io.Writer, opts serverAd
 			return errors.New("node in the different cluster")
 		}
 	} else if len(config.Servers) == 0 {
-		if !opts.dryRun {
-			_, err := node.SwarmInit(ctx, client.SwarmInitOptions{
-				ListenAddr:    "0.0.0.0",
-				AdvertiseAddr: opts.host,
-			})
-			if err != nil {
-				return err
-			}
+		_, err := node.SwarmInit(ctx, client.SwarmInitOptions{
+			ListenAddr:    "0.0.0.0",
+			AdvertiseAddr: opts.host,
+		})
+		if err != nil {
+			return err
 		}
 	} else {
 		manager, mhost, err := docker.GetManagerClient(ctx, config.Servers)
@@ -255,15 +245,13 @@ func runServerAdd(ctx context.Context, in *os.File, out io.Writer, opts serverAd
 			token = inspect.Swarm.JoinTokens.Worker
 		}
 
-		if !opts.dryRun {
-			if _, err := node.SwarmJoin(ctx, client.SwarmJoinOptions{
-				AdvertiseAddr: opts.host,
-				ListenAddr:    "0.0.0.0",
-				RemoteAddrs:   []string{mhost},
-				JoinToken:     token,
-			}); err != nil {
-				return err
-			}
+		if _, err := node.SwarmJoin(ctx, client.SwarmJoinOptions{
+			AdvertiseAddr: opts.host,
+			ListenAddr:    "0.0.0.0",
+			RemoteAddrs:   []string{mhost},
+			JoinToken:     token,
+		}); err != nil {
+			return err
 		}
 	}
 
@@ -271,10 +259,8 @@ func runServerAdd(ctx context.Context, in *os.File, out io.Writer, opts serverAd
 		config.Servers = make(map[string]vault.Server)
 	}
 	config.Servers[opts.host] = server
-	if !opts.dryRun {
-		if err := vault.SaveConfig(cwd, config); err != nil {
-			return fmt.Errorf("failed to save config: %w", err)
-		}
+	if err := vault.SaveConfig(cwd, config); err != nil {
+		return fmt.Errorf("failed to save config: %w", err)
 	}
 
 	fmt.Fprintf(out, "Server '%s' added\n", opts.host)
@@ -469,32 +455,28 @@ const (
 	DockerUser = "cicdez"
 )
 
-func createDockerUser(client *gossh.Client, out io.Writer, dry bool) error {
+func createDockerUser(client *gossh.Client, out io.Writer) error {
 	_, _, err := ssh.Run(client, fmt.Sprintf("id %s", DockerUser), false)
 	var exitErr *gossh.ExitError
 	if errors.As(err, &exitErr) {
 		fmt.Fprintf(out, "Creating %s user...\n", DockerUser)
-		if !dry {
-			_, _, err := ssh.Run(client, fmt.Sprintf("adduser --disabled-password --comment '' %s", DockerUser), true)
-			if err != nil {
-				return err
-			}
+		_, _, err := ssh.Run(client, fmt.Sprintf("adduser --disabled-password --comment '' %s", DockerUser), true)
+		if err != nil {
+			return err
 		}
 		return nil
 	}
 	return err
 }
 
-func setupDocker(client *gossh.Client, out io.Writer, user string, dry bool) error {
+func setupDocker(client *gossh.Client, out io.Writer, user string) error {
 	_, _, err := ssh.Run(client, "docker --version", true)
 	var exitErr *gossh.ExitError
 	if errors.As(err, &exitErr) {
 		fmt.Fprintln(out, "Installing Docker...")
-		if !dry {
-			_, _, err := ssh.Run(client, "curl -fsSL https://get.docker.com | sh && systemctl enable docker.service && systemctl enable containerd.service", true)
-			if err != nil {
-				return err
-			}
+		_, _, err := ssh.Run(client, "curl -fsSL https://get.docker.com | sh && systemctl enable docker.service && systemctl enable containerd.service", true)
+		if err != nil {
+			return err
 		}
 		return nil
 	} else if err != nil {
@@ -502,11 +484,9 @@ func setupDocker(client *gossh.Client, out io.Writer, user string, dry bool) err
 	}
 
 	fmt.Fprintf(out, "Adding %s to docker group...\n", user)
-	if !dry {
-		_, _, err := ssh.Run(client, fmt.Sprintf("usermod -aG docker %s", user), true)
-		if err != nil {
-			return err
-		}
+	_, _, err = ssh.Run(client, fmt.Sprintf("usermod -aG docker %s", user), true)
+	if err != nil {
+		return err
 	}
 
 	return nil
