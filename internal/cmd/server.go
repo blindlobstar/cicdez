@@ -480,7 +480,6 @@ func setupDocker(client *gossh.Client, out io.Writer, user string) error {
 		if err != nil {
 			return err
 		}
-		return nil
 	} else if err != nil {
 		return err
 	}
