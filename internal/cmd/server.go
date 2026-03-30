@@ -164,9 +164,8 @@ func runServerAdd(ctx context.Context, in *os.File, out io.Writer, opts serverAd
 
 		if opts.disablePasswordAuth {
 			fmt.Fprintln(out, "Disabling password authentication...")
-			_, _, err := ssh.Run(client, "sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config && systemctl restart sshd", true)
-			if err != nil {
-				return err
+			if err := disablePasswordAuth(client); err != nil {
+				return fmt.Errorf("error disabling password authentication:\n%w", err)
 			}
 		}
 
@@ -462,7 +461,7 @@ func createDockerUser(client *gossh.Client, out io.Writer) error {
 	var exitErr *gossh.ExitError
 	if errors.As(err, &exitErr) {
 		fmt.Fprintf(out, "Creating %s user...\n", DockerUser)
-		_, _, err := ssh.Run(client, fmt.Sprintf("adduser --disabled-password --comment '' %s", DockerUser), true)
+		_, _, err := ssh.Run(client, fmt.Sprintf("useradd -m %s", DockerUser), true)
 		if err != nil {
 			return err
 		}
@@ -504,8 +503,12 @@ func ensureAuthorizedKey(client *gossh.Client, user string, public []byte) error
 	script := fmt.Sprintf(`mkdir -p %s && (grep -qF '%s' %s/authorized_keys 2>/dev/null || echo '%s' >> %s/authorized_keys) && chown -R %s:%s %s && chmod 700 %s && chmod 600 %s/authorized_keys`,
 		sshDir, public, sshDir, public, sshDir, user, user, sshDir, sshDir, sshDir)
 	_, _, err := ssh.Run(client, script, true)
-	if err != nil {
-		return err
-	}
-	return nil
+	return err
+}
+
+func disablePasswordAuth(client *gossh.Client) error {
+	script := "sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config && (systemctl restart ssh || systemctl restart sshd)"
+
+	_, _, err := ssh.Run(client, script, true)
+	return err
 }
