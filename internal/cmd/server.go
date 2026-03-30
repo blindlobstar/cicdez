@@ -418,7 +418,7 @@ wait:
 		case <-cctx.Done():
 			return cctx.Err()
 		case <-t.C:
-			tasks, err := node.TaskList(cctx, client.TaskListOptions{
+			tasks, err := manager.TaskList(cctx, client.TaskListOptions{
 				Filters: filters,
 			})
 			if err != nil {
@@ -439,7 +439,7 @@ wait:
 	}
 
 	_, err = manager.NodeRemove(ctx, nodeID, client.NodeRemoveOptions{
-		Force: false,
+		Force: true, // can safely remove node, since it drained and left the swarm
 	})
 	if err != nil {
 		return err
