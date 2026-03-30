@@ -164,9 +164,9 @@ func runServerAdd(ctx context.Context, in *os.File, out io.Writer, opts serverAd
 
 		if opts.disablePasswordAuth {
 			fmt.Fprintln(out, "Disabling password authentication...")
-			_, stderr, err := ssh.Run(client, "sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config && systemctl restart sshd", true)
-			if err != nil || stderr != "" {
-				return errors.Join(err, errors.New(stderr))
+			_, _, err := ssh.Run(client, "sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config && systemctl restart sshd", true)
+			if err != nil {
+				return err
 			}
 		}
 
@@ -504,9 +504,9 @@ func ensureAuthorizedKey(client *gossh.Client, user string, public []byte) error
 	public = bytes.TrimSpace(public)
 	script := fmt.Sprintf(`mkdir -p %s && (grep -qF '%s' %s/authorized_keys 2>/dev/null || echo '%s' >> %s/authorized_keys) && chown -R %s:%s %s && chmod 700 %s && chmod 600 %s/authorized_keys`,
 		sshDir, public, sshDir, public, sshDir, user, user, sshDir, sshDir, sshDir)
-	_, stderr, err := ssh.Run(client, script, true)
-	if err != nil || stderr != "" {
-		return errors.Join(err, errors.New(stderr))
+	_, _, err := ssh.Run(client, script, true)
+	if err != nil {
+		return err
 	}
 	return nil
 }
