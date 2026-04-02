@@ -18,9 +18,20 @@ type Config struct {
 }
 
 type Server struct {
-	Port int    `yaml:"port,omitempty"`
-	User string `yaml:"user"`
-	Key  []byte `yaml:"key"`
+	Port int        `yaml:"port,omitempty"`
+	User string     `yaml:"user"`
+	Key  PrivateKey `yaml:"key"`
+}
+
+type PrivateKey []byte
+
+func (k PrivateKey) MarshalYAML() (any, error) {
+	return string(k), nil
+}
+
+func (k *PrivateKey) UnmarshalYAML(node *yaml.Node) error {
+	*k = []byte(node.Value)
+	return nil
 }
 
 func LoadConfig(path string) (Config, error) {
