@@ -99,4 +99,4 @@ require (
 	google.golang.org/protobuf v1.36.11 // indirect
 )
 
-replace github.com/compose-spec/compose-go/v2 => github.com/blindlobstar/compose-go/v2 v2.9.1-cicdez
+replace github.com/compose-spec/compose-go/v2 => ./external/compose-go
