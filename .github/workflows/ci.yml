@@ -1,0 +1,46 @@
+on: [push, pull_request]
+name: Continuous integration
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Check license
+        run: DOCKER_BUILDKIT=1 make check-license
+      - name: Check deepcopy
+        run: |
+          make deepcopy
+          if [ -n "$(git status --porcelain)" ]; then
+            echo >&2 'ERROR: DeepCopy is not up to date with code. Please run "make deepcopy"'
+          fi
+
+  test:
+    strategy:
+      matrix:
+        go-version: ['1.24', '1.25']
+        platform: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 10
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v6
+    - name: Install Go
+      uses: actions/setup-go@v6
+      with:
+        go-version: ${{ matrix.go-version }}
+        check-latest: true
+        cache: true
+    - uses: golangci/golangci-lint-action@v9
+      with:
+        version: v2.1.6
+        args: --verbose
+        skip-cache: true
+    - name: Test
+      run: go test ./...
