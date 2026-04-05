@@ -21,7 +21,6 @@ type deployOptions struct {
 	noBuild      bool
 	noCache      bool
 	pull         bool
-	server       string
 }
 
 func NewDeployCommand() *cobra.Command {
@@ -49,7 +48,6 @@ Stack name defaults to the project name from the compose file.`,
 	cmd.Flags().BoolVar(&opts.noBuild, "no-build", false, "skip building images before deploy")
 	cmd.Flags().BoolVar(&opts.noCache, "no-cache", false, "do not use cache when building")
 	cmd.Flags().BoolVar(&opts.pull, "pull", false, "pull newer versions of base images")
-	cmd.Flags().StringVar(&opts.server, "server", "", "server to deploy to")
 	return cmd
 }
 
