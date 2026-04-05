@@ -50,9 +50,6 @@ func DialWithPassword(host string, port int, user, password string) (*ssh.Client
 }
 
 func dial(host string, port int, config *ssh.ClientConfig) (*ssh.Client, error) {
-	if port == 0 {
-		port = 22
-	}
 	addr := fmt.Sprintf("%s:%d", host, port)
 	client, err := ssh.Dial("tcp", addr, config)
 	if err != nil {
