@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/blindlobstar/cicdez/internal/vault"
 	"github.com/compose-spec/compose-go/v2/types"
@@ -123,7 +124,8 @@ func pruneServices(ctx context.Context, dockerClient client.APIClient, stack str
 
 	var pruneErr error
 	for _, svc := range res.Items {
-		if _, exists := services[svc.Spec.Name]; !exists {
+		name := strings.TrimPrefix(svc.Spec.Name, stack+"_")
+		if _, exists := services[name]; !exists {
 			if _, err := dockerClient.ServiceRemove(ctx, svc.ID, client.ServiceRemoveOptions{}); err != nil {
 				pruneErr = errors.Join(pruneErr, err)
 			}
