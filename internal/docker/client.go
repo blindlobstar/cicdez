@@ -23,7 +23,11 @@ func NewClientSSH(host string, port int, user string, privateKey []byte) (client
 		},
 	}
 
-	return client.New(
-		client.WithHTTPClient(httpClient),
-	)
+	client, err := client.New(client.WithHTTPClient(httpClient))
+	if err != nil {
+		sshClient.Close()
+		return nil, err
+	}
+
+	return client, nil
 }

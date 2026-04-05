@@ -188,6 +188,7 @@ func runServerAdd(ctx context.Context, in *os.File, out io.Writer, opts serverAd
 	if err != nil {
 		return err
 	}
+	defer node.Close()
 
 	info, err := node.Info(ctx, client.InfoOptions{})
 	if err != nil {
@@ -233,6 +234,7 @@ func runServerAdd(ctx context.Context, in *os.File, out io.Writer, opts serverAd
 		if err != nil {
 			return err
 		}
+		defer manager.Close()
 
 		inspect, err := manager.SwarmInspect(ctx, client.SwarmInspectOptions{})
 		if err != nil {
@@ -368,6 +370,7 @@ func runServerRemove(ctx context.Context, out io.Writer, opts serverRemoveOption
 	if err != nil {
 		return err
 	}
+	defer node.Close()
 
 	info, err := node.Info(ctx, client.InfoOptions{})
 	if err != nil {
@@ -383,6 +386,7 @@ func runServerRemove(ctx context.Context, out io.Writer, opts serverRemoveOption
 	if err != nil {
 		return err
 	}
+	defer manager.Close()
 
 	ni, err := manager.NodeInspect(ctx, nodeID, client.NodeInspectOptions{})
 	if err != nil {

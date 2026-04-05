@@ -101,6 +101,7 @@ func runDeploy(ctx context.Context, out io.Writer, opts deployOptions) error {
 	if err != nil {
 		return err
 	}
+	defer client.Close()
 
 	err = docker.Deploy(ctx, client, project, docker.DeployOptions{
 		Secrets:      secrets,
