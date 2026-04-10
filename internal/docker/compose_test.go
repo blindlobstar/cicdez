@@ -166,12 +166,20 @@ func TestComposeParser(t *testing.T) {
 				}
 			},
 		},
+		{
+			name: "Default compose file",
+			checkFunc: func(t *testing.T, p types.Project) {
+				if len(p.Services) != 2 {
+					t.Errorf("expected 2 services, got %d", len(p.Services))
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			project, err := LoadCompose(ctx, tt.files...)
+			project, err := LoadCompose(ctx, "../../testdata/", tt.files...)
 			if err != nil {
 				t.Fatalf("LoadCompose failed: %v", err)
 			}

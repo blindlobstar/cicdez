@@ -27,17 +27,23 @@ const (
 	DefaultNetworkDriver = "overlay"
 )
 
-func LoadCompose(ctx context.Context, paths ...string) (types.Project, error) {
+func LoadCompose(ctx context.Context, cwd string, paths ...string) (types.Project, error) {
 	projectOptions, err := cli.NewProjectOptions(
 		paths,
 		cli.WithOsEnv,
 		cli.WithDotEnv,
 		cli.WithInterpolation(true),
 		cli.WithResolvedPaths(true),
+		cli.WithWorkingDirectory(cwd),
 	)
 	if err != nil {
 		return types.Project{}, fmt.Errorf("failed to create project options: %w", err)
 	}
+
+	if err := cli.WithDefaultConfigPath(projectOptions); err != nil {
+		return types.Project{}, err
+	}
+
 	composeProject, err := projectOptions.LoadProject(ctx)
 	if err != nil {
 		return types.Project{}, fmt.Errorf("error to load project: %w", err)
@@ -1046,4 +1052,3 @@ func convertCredentialSpec(ctx context.Context, apiClient client.APIClient, stac
 
 	return credSpec, configRef, nil
 }
-

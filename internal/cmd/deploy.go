@@ -41,7 +41,7 @@ Stack name defaults to the project name from the compose file.`,
 			return runDeploy(cmd.Context(), cmd.OutOrStdout(), opts)
 		},
 	}
-	cmd.Flags().StringArrayVarP(&opts.composeFiles, "file", "f", []string{"compose.yaml"}, "compose file path(s)")
+	cmd.Flags().StringArrayVarP(&opts.composeFiles, "file", "f", []string{}, "compose file path(s)")
 	cmd.Flags().BoolVar(&opts.prune, "prune", false, "prune services no longer referenced")
 	cmd.Flags().StringVar(&opts.resolveImage, "resolve-image", docker.ResolveImageAlways, "resolve image digests: always, changed, never")
 	cmd.Flags().BoolVarP(&opts.quiet, "quiet", "q", false, "suppress progress output")
@@ -62,7 +62,7 @@ func runDeploy(ctx context.Context, out io.Writer, opts deployOptions) error {
 		return err
 	}
 
-	project, err := docker.LoadCompose(ctx, opts.composeFiles...)
+	project, err := docker.LoadCompose(ctx, cwd, opts.composeFiles...)
 	if err != nil {
 		return err
 	}
