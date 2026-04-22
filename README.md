@@ -22,6 +22,10 @@ Secrets are decrypted at deploy time and injected as Docker secrets.
 ## Installation
 
 ```bash
+# Homebrew (macOS and Linux)
+brew install blindlobstar/tap/cicdez
+
+# Go install
 go install github.com/blindlobstar/cicdez@latest
 ```
 
