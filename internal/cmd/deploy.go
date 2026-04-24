@@ -21,6 +21,7 @@ type deployOptions struct {
 	noBuild      bool
 	noCache      bool
 	pull         bool
+	detach       bool
 }
 
 func NewDeployCommand() *cobra.Command {
@@ -48,6 +49,7 @@ Stack name defaults to the project name from the compose file.`,
 	cmd.Flags().BoolVar(&opts.noBuild, "no-build", false, "skip building images before deploy")
 	cmd.Flags().BoolVar(&opts.noCache, "no-cache", false, "do not use cache when building")
 	cmd.Flags().BoolVar(&opts.pull, "pull", false, "pull newer versions of base images")
+	cmd.Flags().BoolVarP(&opts.detach, "detach", "d", false, "exit immediately instead of waiting for the services to converge")
 	return cmd
 }
 
@@ -92,8 +94,14 @@ func runDeploy(ctx context.Context, out io.Writer, opts deployOptions) error {
 			Out:        out,
 		}
 
+		if !opts.quiet {
+			fmt.Fprintln(out, "==> Building images")
+		}
 		if err := docker.Build(ctx, dockerClient, project, buildOpts); err != nil {
 			return fmt.Errorf("failed to build and push images: %w", err)
+		}
+		if !opts.quiet {
+			fmt.Fprintln(out)
 		}
 	}
 
@@ -103,6 +111,9 @@ func runDeploy(ctx context.Context, out io.Writer, opts deployOptions) error {
 	}
 	defer client.Close()
 
+	if !opts.quiet {
+		fmt.Fprintf(out, "==> Deploying stack %s\n", opts.stack)
+	}
 	err = docker.Deploy(ctx, client, project, docker.DeployOptions{
 		Secrets:      secrets,
 		Stack:        opts.stack,
@@ -110,6 +121,7 @@ func runDeploy(ctx context.Context, out io.Writer, opts deployOptions) error {
 		ResolveImage: opts.resolveImage,
 		Quiet:        opts.quiet,
 		Registries:   cfg.Registries,
+		Detach:       opts.detach,
 		Out:          out,
 	})
 	if err != nil {

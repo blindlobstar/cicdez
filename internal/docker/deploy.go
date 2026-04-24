@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/blindlobstar/cicdez/internal/vault"
@@ -36,6 +37,7 @@ type DeployOptions struct {
 	Prune        bool
 	ResolveImage string
 	Quiet        bool
+	Detach       bool
 	Registries   map[string]registry.AuthConfig
 	Out          io.Writer
 }
@@ -58,7 +60,7 @@ func Deploy(ctx context.Context, dockerClient client.APIClient, project types.Pr
 		for _, svc := range project.Services {
 			services[svc.Name] = struct{}{}
 		}
-		if err := pruneServices(ctx, dockerClient, opts.Stack, services); err != nil {
+		if err := pruneServices(ctx, dockerClient, opts.Stack, services, opts.Quiet, opts.Out); err != nil {
 			return err
 		}
 	}
@@ -68,7 +70,7 @@ func Deploy(ctx context.Context, dockerClient client.APIClient, project types.Pr
 	if err := validateExternalNetworks(ctx, dockerClient, externalNetworks); err != nil {
 		return err
 	}
-	if err := createNetworks(ctx, dockerClient, opts.Stack, networks); err != nil {
+	if err := createNetworks(ctx, dockerClient, opts.Stack, networks, opts.Quiet, opts.Out); err != nil {
 		return err
 	}
 
@@ -76,7 +78,7 @@ func Deploy(ctx context.Context, dockerClient client.APIClient, project types.Pr
 	if err != nil {
 		return err
 	}
-	if err := createSecrets(ctx, dockerClient, secrets); err != nil {
+	if err := createSecrets(ctx, dockerClient, secrets, opts.Quiet, opts.Out); err != nil {
 		return err
 	}
 
@@ -84,7 +86,7 @@ func Deploy(ctx context.Context, dockerClient client.APIClient, project types.Pr
 	if err != nil {
 		return err
 	}
-	if err := createConfigs(ctx, dockerClient, configs); err != nil {
+	if err := createConfigs(ctx, dockerClient, configs, opts.Quiet, opts.Out); err != nil {
 		return err
 	}
 
@@ -93,9 +95,15 @@ func Deploy(ctx context.Context, dockerClient client.APIClient, project types.Pr
 		return err
 	}
 
-	_, err = deployServices(ctx, dockerClient, services, opts.Stack, opts.ResolveImage, opts.Registries, opts.Quiet, opts.Out)
+	serviceNames, err := deployServices(ctx, dockerClient, services, opts.Stack, opts.ResolveImage, opts.Registries, opts.Quiet, opts.Out)
 	if err != nil {
 		return err
+	}
+
+	if !opts.Detach && len(serviceNames) > 0 {
+		if err := waitOnServices(ctx, dockerClient, serviceNames, opts.Quiet, opts.Out); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -116,19 +124,30 @@ func getStackFilter(stack string) client.Filters {
 	return make(client.Filters).Add("label", LabelNamespace+"="+stack)
 }
 
-func pruneServices(ctx context.Context, dockerClient client.APIClient, stack string, services map[string]struct{}) error {
+func pruneServices(ctx context.Context, dockerClient client.APIClient, stack string, services map[string]struct{}, quiet bool, out io.Writer) error {
 	res, err := dockerClient.ServiceList(ctx, client.ServiceListOptions{Filters: getStackFilter(stack)})
 	if err != nil {
 		return err
 	}
 
-	var pruneErr error
+	toRemove := make([]swarm.Service, 0, len(res.Items))
 	for _, svc := range res.Items {
 		name := strings.TrimPrefix(svc.Spec.Name, stack+"_")
 		if _, exists := services[name]; !exists {
-			if _, err := dockerClient.ServiceRemove(ctx, svc.ID, client.ServiceRemoveOptions{}); err != nil {
-				pruneErr = errors.Join(pruneErr, err)
-			}
+			toRemove = append(toRemove, svc)
+		}
+	}
+	sort.Slice(toRemove, func(i, j int) bool {
+		return toRemove[i].Spec.Name < toRemove[j].Spec.Name
+	})
+
+	var pruneErr error
+	for _, svc := range toRemove {
+		if !quiet {
+			fmt.Fprintf(out, "Removing service %s\n", svc.Spec.Name)
+		}
+		if _, err := dockerClient.ServiceRemove(ctx, svc.ID, client.ServiceRemoveOptions{}); err != nil {
+			pruneErr = errors.Join(pruneErr, fmt.Errorf("failed to remove service %s: %w", svc.Spec.Name, err))
 		}
 	}
 	return pruneErr
@@ -152,7 +171,7 @@ func validateExternalNetworks(ctx context.Context, apiClient client.APIClient, e
 	return nil
 }
 
-func createNetworks(ctx context.Context, apiClient client.APIClient, stack string, networks map[string]client.NetworkCreateOptions) error {
+func createNetworks(ctx context.Context, apiClient client.APIClient, stack string, networks map[string]client.NetworkCreateOptions, quiet bool, out io.Writer) error {
 	res, err := apiClient.NetworkList(ctx, client.NetworkListOptions{Filters: getStackFilter(stack)})
 	if err != nil {
 		return err
@@ -172,6 +191,9 @@ func createNetworks(ctx context.Context, apiClient client.APIClient, stack strin
 			createOpts.Driver = DefaultNetworkDriver
 		}
 
+		if !quiet {
+			fmt.Fprintf(out, "Creating network %s\n", name)
+		}
 		if _, err := apiClient.NetworkCreate(ctx, name, createOpts); err != nil {
 			return fmt.Errorf("failed to create network %s: %w", name, err)
 		}
@@ -179,11 +201,14 @@ func createNetworks(ctx context.Context, apiClient client.APIClient, stack strin
 	return nil
 }
 
-func createSecrets(ctx context.Context, apiClient client.APIClient, secrets []swarm.SecretSpec) error {
+func createSecrets(ctx context.Context, apiClient client.APIClient, secrets []swarm.SecretSpec, quiet bool, out io.Writer) error {
 	for _, secretSpec := range secrets {
 		res, err := apiClient.SecretInspect(ctx, secretSpec.Name, client.SecretInspectOptions{})
 		switch {
 		case err == nil:
+			if !quiet {
+				fmt.Fprintf(out, "Updating secret %s\n", secretSpec.Name)
+			}
 			_, err := apiClient.SecretUpdate(ctx, res.Secret.ID, client.SecretUpdateOptions{
 				Version: res.Secret.Version,
 				Spec:    secretSpec,
@@ -192,6 +217,9 @@ func createSecrets(ctx context.Context, apiClient client.APIClient, secrets []sw
 				return fmt.Errorf("failed to update secret %s: %w", secretSpec.Name, err)
 			}
 		case errdefs.IsNotFound(err):
+			if !quiet {
+				fmt.Fprintf(out, "Creating secret %s\n", secretSpec.Name)
+			}
 			_, err := apiClient.SecretCreate(ctx, client.SecretCreateOptions{
 				Spec: secretSpec,
 			})
@@ -205,11 +233,14 @@ func createSecrets(ctx context.Context, apiClient client.APIClient, secrets []sw
 	return nil
 }
 
-func createConfigs(ctx context.Context, apiClient client.APIClient, configs []swarm.ConfigSpec) error {
+func createConfigs(ctx context.Context, apiClient client.APIClient, configs []swarm.ConfigSpec, quiet bool, out io.Writer) error {
 	for _, configSpec := range configs {
 		res, err := apiClient.ConfigInspect(ctx, configSpec.Name, client.ConfigInspectOptions{})
 		switch {
 		case err == nil:
+			if !quiet {
+				fmt.Fprintf(out, "Updating config %s\n", configSpec.Name)
+			}
 			_, err := apiClient.ConfigUpdate(ctx, res.Config.ID, client.ConfigUpdateOptions{
 				Version: res.Config.Version,
 				Spec:    configSpec,
@@ -218,6 +249,9 @@ func createConfigs(ctx context.Context, apiClient client.APIClient, configs []sw
 				return fmt.Errorf("failed to update config %s: %w", configSpec.Name, err)
 			}
 		case errdefs.IsNotFound(err):
+			if !quiet {
+				fmt.Fprintf(out, "Creating config %s\n", configSpec.Name)
+			}
 			_, err := apiClient.ConfigCreate(ctx, client.ConfigCreateOptions{
 				Spec: configSpec,
 			})
@@ -231,7 +265,7 @@ func createConfigs(ctx context.Context, apiClient client.APIClient, configs []sw
 	return nil
 }
 
-func deployServices(ctx context.Context, apiClient client.APIClient, services map[string]swarm.ServiceSpec, stack string, resolveImage string, registries map[string]registry.AuthConfig, quiet bool, out io.Writer) ([]string, error) {
+func deployServices(ctx context.Context, apiClient client.APIClient, services map[string]swarm.ServiceSpec, stack string, resolveImage string, registries map[string]registry.AuthConfig, quiet bool, out io.Writer) (map[string]string, error) {
 	res, err := apiClient.ServiceList(ctx, client.ServiceListOptions{Filters: getStackFilter(stack)})
 	if err != nil {
 		return nil, err
@@ -242,7 +276,7 @@ func deployServices(ctx context.Context, apiClient client.APIClient, services ma
 		existingServiceMap[svc.Spec.Name] = svc
 	}
 
-	var serviceIDs []string
+	serviceNames := make(map[string]string, len(services))
 
 	for internalName, serviceSpec := range services {
 		name := ScopeName(stack, internalName)
@@ -283,7 +317,7 @@ func deployServices(ctx context.Context, apiClient client.APIClient, services ma
 				fmt.Fprintf(out, "Updating service %s\n", name)
 			}
 
-			serviceIDs = append(serviceIDs, svc.ID)
+			serviceNames[svc.ID] = name
 		} else {
 			if !quiet {
 				fmt.Fprintf(out, "Creating service %s\n", name)
@@ -300,11 +334,11 @@ func deployServices(ctx context.Context, apiClient client.APIClient, services ma
 				return nil, fmt.Errorf("failed to create service %s: %w", name, err)
 			}
 
-			serviceIDs = append(serviceIDs, response.ID)
+			serviceNames[response.ID] = name
 		}
 	}
 
-	return serviceIDs, nil
+	return serviceNames, nil
 }
 
 func getEncodedAuth(image string, registries map[string]registry.AuthConfig) string {
