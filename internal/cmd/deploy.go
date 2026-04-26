@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/blindlobstar/cicdez/internal/docker"
+	"github.com/blindlobstar/cicdez/internal/git"
 	"github.com/blindlobstar/cicdez/internal/vault"
 	"github.com/moby/moby/client"
 	"github.com/spf13/cobra"
@@ -22,6 +23,7 @@ type deployOptions struct {
 	noCache      bool
 	pull         bool
 	detach       bool
+	ref          string
 }
 
 func NewDeployCommand() *cobra.Command {
@@ -43,6 +45,8 @@ Stack name defaults to the project name from the compose file.`,
 		},
 	}
 	cmd.Flags().StringArrayVarP(&opts.composeFiles, "file", "f", []string{}, "compose file path(s)")
+	cmd.Flags().StringVar(&opts.ref, "ref", "", "git ref to deploy (branch, tag, or sha); bare --ref means HEAD")
+	cmd.Flags().Lookup("ref").NoOptDefVal = "HEAD"
 	cmd.Flags().BoolVar(&opts.prune, "prune", false, "prune services no longer referenced")
 	cmd.Flags().StringVar(&opts.resolveImage, "resolve-image", docker.ResolveImageAlways, "resolve image digests: always, changed, never")
 	cmd.Flags().BoolVarP(&opts.quiet, "quiet", "q", false, "suppress progress output")
@@ -57,6 +61,15 @@ func runDeploy(ctx context.Context, out io.Writer, opts deployOptions) error {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get current directory: %w", err)
+	}
+
+	if opts.ref != "" {
+		dir, cleanup, err := git.Resolve(cwd, opts.ref)
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+		cwd = dir
 	}
 
 	cfg, err := vault.LoadConfig(cwd)

@@ -14,6 +14,7 @@ Simple CLI to provision servers and  manage deployments, configuration, and secr
 - No external secret manager or CI/CD platform required
 - Single binary, no dependencies
 - Uses standard Docker Compose files
+- Clean build and deploy from a specific version (branch, tag, or commit), without uncommitted changes
 
 **How it works:**
 - Define services in `docker-compose.yaml`
@@ -130,6 +131,28 @@ API_KEY: mykey
 ```
 
 Nested structures are not supported. Use `cicdez secret edit` to modify secrets directly.
+
+## Git Integration
+
+Build or deploy from a specific git ref instead of the working tree:
+
+```bash
+# Deploy the tip of main
+cicdez deploy --ref main
+
+# Deploy a tag
+cicdez deploy --ref v1.2.0
+
+# Deploy a specific commit
+cicdez deploy --ref a1b2c3d
+
+# Bare --ref is shorthand for HEAD
+cicdez deploy --ref
+```
+
+The ref is extracted to a temporary directory and discarded after the command finishes, so uncommitted changes in your working tree are ignored. The ref must already exist locally — fetch first if you're targeting a remote branch (`git fetch && cicdez deploy --ref origin/main`).
+
+Submodules and Git LFS are not supported.
 
 ## Compose Extensions
 

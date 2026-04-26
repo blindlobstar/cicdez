@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/blindlobstar/cicdez/internal/docker"
+	"github.com/blindlobstar/cicdez/internal/git"
 	"github.com/blindlobstar/cicdez/internal/vault"
 	"github.com/moby/moby/client"
 	"github.com/spf13/cobra"
@@ -15,6 +16,7 @@ import (
 type buildOptions struct {
 	composeFiles []string
 	services     []string
+	ref          string
 	noCache      bool
 	pull         bool
 	push         bool
@@ -31,6 +33,8 @@ func NewBuildCommand() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringArrayVarP(&opts.composeFiles, "file", "f", []string{}, "compose file path(s)")
+	cmd.Flags().StringVar(&opts.ref, "ref", "", "git ref to build from (branch, tag, or sha); bare --ref means HEAD")
+	cmd.Flags().Lookup("ref").NoOptDefVal = "HEAD"
 	cmd.Flags().BoolVar(&opts.noCache, "no-cache", false, "do not use cache when building")
 	cmd.Flags().BoolVar(&opts.pull, "pull", false, "pull newer versions of base images")
 	cmd.Flags().BoolVar(&opts.push, "push", false, "push images after build")
@@ -41,6 +45,15 @@ func runBuild(ctx context.Context, out io.Writer, opts buildOptions) error {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get current directory: %w", err)
+	}
+
+	if opts.ref != "" {
+		dir, cleanup, err := git.Resolve(cwd, opts.ref)
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+		cwd = dir
 	}
 
 	project, err := docker.LoadCompose(ctx, cwd, opts.composeFiles...)
