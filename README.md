@@ -1,5 +1,9 @@
 # cicdez
 
+<p align="center">
+  <img src="docs/quick-start.gif" alt="cicdez quick start" width="800">
+</p>
+
 ## Overview
 
 Simple CLI to provision servers and  manage deployments, configuration, and secrets. Everything stays encrypted in your repo. Build, push, and deploy with one command.
