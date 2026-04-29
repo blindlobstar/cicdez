@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/go-git/go-git/v6"
+	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/filemode"
 	"github.com/go-git/go-git/v6/plumbing/object"
@@ -59,14 +60,38 @@ func Resolve(path, ref string) (string, func(), error) {
 		return "", nil, err
 	}
 	cleanup := func() { os.RemoveAll(dir) }
-	if err := resolveRef(repo, ref, dir); err != nil {
+	if err := resolveWithSubmodules(rpath, ref, dir); err != nil {
 		cleanup()
 		return "", nil, fmt.Errorf("failed to extract ref %q: %w", ref, err)
 	}
 	return filepath.Join(dir, path), cleanup, nil
 }
 
-func resolveRef(repo *git.Repository, ref, path string) error {
+func resolveWithSubmodules(path, ref, dest string) error {
+	if ref == "" {
+		return ErrEmptyRef
+	}
+
+	repo, err := git.PlainOpenWithOptions(path, &git.PlainOpenOptions{
+		DetectDotGit: false,
+	})
+	if errors.Is(err, git.ErrRepositoryNotExists) {
+		return ErrNoRepository
+	}
+	if err != nil {
+		return err
+	}
+
+	wt, err := repo.Worktree()
+	if err != nil {
+		return err
+	}
+
+	rpath, err := filepath.EvalSymlinks(wt.Filesystem.Root())
+	if err != nil {
+		return err
+	}
+
 	hash, err := repo.ResolveRevision(plumbing.Revision(ref))
 	if err != nil {
 		return err
@@ -81,14 +106,44 @@ func resolveRef(repo *git.Repository, ref, path string) error {
 		return err
 	}
 
-	// tree.Files() silently skips submodule entries (they have no blob),
-	// so walk all entries first to fail on gitlinks.
-	if err := ensureNoSubmodules(tree); err != nil {
+	gmt, err := tree.File(".gitmodules")
+	if err != nil && !errors.Is(err, object.ErrFileNotFound) {
 		return err
 	}
 
+	if gmt != nil {
+		modulecontent, err := gmt.Contents()
+		if err != nil {
+			return err
+		}
+		m := config.NewModules()
+		if err := m.Unmarshal([]byte(modulecontent)); err != nil {
+			return err
+		}
+
+		for _, sm := range m.Submodules {
+			se, err := tree.FindEntry(sm.Path)
+			if err != nil {
+				return err
+			}
+
+			if err := os.MkdirAll(filepath.Join(dest, sm.Path), 0o755); err != nil {
+				return err
+			}
+
+			err = resolveWithSubmodules(filepath.Join(rpath, sm.Path), se.Hash.String(), filepath.Join(dest, sm.Path))
+			if errors.Is(err, ErrNoRepository) {
+				return fmt.Errorf("submodule %q not initialized — run `git submodule update --init --recursive`", sm.Path)
+			}
+			if err != nil {
+				return err
+			}
+
+		}
+	}
+
 	return tree.Files().ForEach(func(f *object.File) error {
-		dst := filepath.Join(path, f.Name)
+		dst := filepath.Join(dest, f.Name)
 		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 			return err
 		}
@@ -120,21 +175,4 @@ func resolveRef(repo *git.Repository, ref, path string) error {
 		_, err = io.Copy(out, r)
 		return err
 	})
-}
-
-func ensureNoSubmodules(tree *object.Tree) error {
-	walker := object.NewTreeWalker(tree, true, nil)
-	defer walker.Close()
-	for {
-		name, entry, err := walker.Next()
-		if err == io.EOF {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		if entry.Mode == filemode.Submodule {
-			return fmt.Errorf("--ref builds don't support submodules: %s", name)
-		}
-	}
 }

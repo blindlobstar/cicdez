@@ -154,27 +154,7 @@ func TestResolve_FromSubdir(t *testing.T) {
 	}
 }
 
-func TestResolveRef_BasicFile(t *testing.T) {
-	dir := initRepo(t)
-	repo, err := git.PlainOpen(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	out := t.TempDir()
-
-	if err := resolveRef(repo, "HEAD", out); err != nil {
-		t.Fatalf("resolveRef: %v", err)
-	}
-	data, err := os.ReadFile(filepath.Join(out, "README.md"))
-	if err != nil {
-		t.Fatalf("read extracted file: %v", err)
-	}
-	if string(data) != "hello" {
-		t.Errorf("expected %q, got %q", "hello", string(data))
-	}
-}
-
-func TestResolveRef_NestedDirectories(t *testing.T) {
+func TestResolve_NestedDirectories(t *testing.T) {
 	dir := t.TempDir()
 	repo, err := git.PlainInit(dir, false)
 	if err != nil {
@@ -196,16 +176,17 @@ func TestResolveRef_NestedDirectories(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	out := t.TempDir()
-	if err := resolveRef(repo, "HEAD", out); err != nil {
-		t.Fatalf("resolveRef: %v", err)
+	out, cleanup, err := Resolve(dir, "HEAD")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
 	}
+	defer cleanup()
 	if _, err := os.Stat(filepath.Join(out, "src", "lib", "code.go")); err != nil {
 		t.Errorf("expected nested file: %v", err)
 	}
 }
 
-func TestResolveRef_PreservesExecutableBit(t *testing.T) {
+func TestResolve_PreservesExecutableBit(t *testing.T) {
 	dir := t.TempDir()
 	repo, err := git.PlainInit(dir, false)
 	if err != nil {
@@ -225,10 +206,11 @@ func TestResolveRef_PreservesExecutableBit(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	out := t.TempDir()
-	if err := resolveRef(repo, "HEAD", out); err != nil {
-		t.Fatalf("resolveRef: %v", err)
+	out, cleanup, err := Resolve(dir, "HEAD")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
 	}
+	defer cleanup()
 	info, err := os.Stat(filepath.Join(out, "script.sh"))
 	if err != nil {
 		t.Fatal(err)
@@ -238,7 +220,7 @@ func TestResolveRef_PreservesExecutableBit(t *testing.T) {
 	}
 }
 
-func TestResolveRef_PreservesSymlink(t *testing.T) {
+func TestResolve_PreservesSymlink(t *testing.T) {
 	dir := t.TempDir()
 	repo, err := git.PlainInit(dir, false)
 	if err != nil {
@@ -263,10 +245,11 @@ func TestResolveRef_PreservesSymlink(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	out := t.TempDir()
-	if err := resolveRef(repo, "HEAD", out); err != nil {
-		t.Fatalf("resolveRef: %v", err)
+	out, cleanup, err := Resolve(dir, "HEAD")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
 	}
+	defer cleanup()
 	info, err := os.Lstat(filepath.Join(out, "link.txt"))
 	if err != nil {
 		t.Fatal(err)
@@ -283,7 +266,7 @@ func TestResolveRef_PreservesSymlink(t *testing.T) {
 	}
 }
 
-func TestResolveRef_Tag(t *testing.T) {
+func TestResolve_Tag(t *testing.T) {
 	dir := initRepo(t)
 	repo, err := git.PlainOpen(dir)
 	if err != nil {
@@ -297,46 +280,67 @@ func TestResolveRef_Tag(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	out := t.TempDir()
-	if err := resolveRef(repo, "v1.0.0", out); err != nil {
-		t.Fatalf("resolveRef: %v", err)
+	out, cleanup, err := Resolve(dir, "v1.0.0")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
 	}
+	defer cleanup()
 	if _, err := os.Stat(filepath.Join(out, "README.md")); err != nil {
 		t.Errorf("expected README.md from tag: %v", err)
 	}
 }
 
-func TestResolveRef_UnknownRef(t *testing.T) {
+func TestResolve_UnknownRef(t *testing.T) {
 	dir := initRepo(t)
-	repo, _ := git.PlainOpen(dir)
 
-	out := t.TempDir()
-	if err := resolveRef(repo, "nonexistent", out); err == nil {
+	_, _, err := Resolve(dir, "nonexistent")
+	if err == nil {
 		t.Fatal("expected error for unknown ref")
 	}
 }
 
-func TestResolveRef_Submodule(t *testing.T) {
-	dir := initRepo(t)
-	repo, err := git.PlainOpen(dir)
+// commitTreeWithSubmodule writes a tree containing a .gitmodules blob and,
+// if submodPath is non-empty, a gitlink entry at submodPath -> submodHash.
+// Returns the commit hash.
+func commitTreeWithSubmodule(t *testing.T, repo *git.Repository, gitmodules, submodPath string, submodHash plumbing.Hash) plumbing.Hash {
+	t.Helper()
+
+	gmBlob := repo.Storer.NewEncodedObject()
+	gmBlob.SetType(plumbing.BlobObject)
+	w, err := gmBlob.Writer()
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("blob writer: %v", err)
+	}
+	if _, err := w.Write([]byte(gitmodules)); err != nil {
+		t.Fatalf("blob write: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("blob close: %v", err)
+	}
+	gmHash, err := repo.Storer.SetEncodedObject(gmBlob)
+	if err != nil {
+		t.Fatalf("store blob: %v", err)
 	}
 
-	tree := &object.Tree{
-		Entries: []object.TreeEntry{{
-			Name: "submod",
-			Mode: filemode.Submodule,
-			Hash: plumbing.NewHash("0123456789abcdef0123456789abcdef01234567"),
-		}},
+	entries := []object.TreeEntry{
+		{Name: ".gitmodules", Mode: filemode.Regular, Hash: gmHash},
 	}
+	if submodPath != "" {
+		entries = append(entries, object.TreeEntry{
+			Name: submodPath,
+			Mode: filemode.Submodule,
+			Hash: submodHash,
+		})
+	}
+
+	tree := &object.Tree{Entries: entries}
 	treeObj := repo.Storer.NewEncodedObject()
 	if err := tree.Encode(treeObj); err != nil {
-		t.Fatal(err)
+		t.Fatalf("tree encode: %v", err)
 	}
 	treeHash, err := repo.Storer.SetEncodedObject(treeObj)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("store tree: %v", err)
 	}
 
 	commit := &object.Commit{
@@ -347,19 +351,98 @@ func TestResolveRef_Submodule(t *testing.T) {
 	}
 	commitObj := repo.Storer.NewEncodedObject()
 	if err := commit.Encode(commitObj); err != nil {
-		t.Fatal(err)
+		t.Fatalf("commit encode: %v", err)
 	}
 	commitHash, err := repo.Storer.SetEncodedObject(commitObj)
+	if err != nil {
+		t.Fatalf("store commit: %v", err)
+	}
+	return commitHash
+}
+
+func TestResolve_Submodule_Initialized(t *testing.T) {
+	mainDir := t.TempDir()
+	mainRepo, err := git.PlainInit(mainDir, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	out := t.TempDir()
-	err = resolveRef(repo, commitHash.String(), out)
-	if err == nil {
-		t.Fatal("expected submodule error")
+	subDir := filepath.Join(mainDir, "sub")
+	if err := os.MkdirAll(subDir, 0o755); err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(err.Error(), "submodule") {
-		t.Errorf("expected error to mention submodule, got %v", err)
+	subRepo, err := git.PlainInit(subDir, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(subDir, "sub.txt"), []byte("from submodule"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	swt, _ := subRepo.Worktree()
+	if _, err := swt.Add("sub.txt"); err != nil {
+		t.Fatal(err)
+	}
+	subHead, err := swt.Commit("sub init", &git.CommitOptions{
+		Author: &object.Signature{Name: "t", Email: "t@t", When: time.Now()},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	gitmodules := "[submodule \"subname\"]\n\tpath = sub\n\turl = ./fake\n"
+	commitHash := commitTreeWithSubmodule(t, mainRepo, gitmodules, "sub", subHead)
+
+	out, cleanup, err := Resolve(mainDir, commitHash.String())
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	defer cleanup()
+
+	data, err := os.ReadFile(filepath.Join(out, "sub", "sub.txt"))
+	if err != nil {
+		t.Fatalf("expected submodule file: %v", err)
+	}
+	if string(data) != "from submodule" {
+		t.Errorf("got %q, want %q", string(data), "from submodule")
+	}
+	if _, err := os.Stat(filepath.Join(out, ".gitmodules")); err != nil {
+		t.Errorf("expected .gitmodules in extracted dir: %v", err)
+	}
+}
+
+func TestResolve_Submodule_NotInitialized(t *testing.T) {
+	mainDir := t.TempDir()
+	mainRepo, err := git.PlainInit(mainDir, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	gitmodules := "[submodule \"subname\"]\n\tpath = sub\n\turl = ./fake\n"
+	fakeHash := plumbing.NewHash("0123456789abcdef0123456789abcdef01234567")
+	commitHash := commitTreeWithSubmodule(t, mainRepo, gitmodules, "sub", fakeHash)
+
+	_, _, err = Resolve(mainDir, commitHash.String())
+	if err == nil {
+		t.Fatal("expected error for uninitialized submodule")
+	}
+	if !strings.Contains(err.Error(), "not initialized") {
+		t.Errorf("expected 'not initialized' error, got %v", err)
+	}
+}
+
+func TestResolve_Submodule_MissingTreeEntry(t *testing.T) {
+	mainDir := t.TempDir()
+	mainRepo, err := git.PlainInit(mainDir, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// .gitmodules references "sub" but the tree has no gitlink at that path.
+	gitmodules := "[submodule \"subname\"]\n\tpath = sub\n\turl = ./fake\n"
+	commitHash := commitTreeWithSubmodule(t, mainRepo, gitmodules, "", plumbing.ZeroHash)
+
+	_, _, err = Resolve(mainDir, commitHash.String())
+	if err == nil {
+		t.Fatal("expected error when .gitmodules entry has no matching tree entry")
 	}
 }
