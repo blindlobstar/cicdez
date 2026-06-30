@@ -284,6 +284,11 @@ func deployServices(ctx context.Context, apiClient client.APIClient, services ma
 
 		encodedAuth := getEncodedAuth(image, registries)
 
+		// loaded images have no registry manifest to resolve
+		if IsRegistryless(image) {
+			resolveImage = ResolveImageNever
+		}
+
 		if svc, exists := existingServiceMap[name]; exists {
 			updateOpts := client.ServiceUpdateOptions{
 				Version:             svc.Version,

@@ -6,14 +6,18 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/blindlobstar/cicdez/internal/docker"
 	"github.com/blindlobstar/cicdez/internal/ssh"
 	"github.com/blindlobstar/cicdez/internal/vault"
+	"github.com/containerd/errdefs"
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/client"
 	"github.com/spf13/cobra"
@@ -246,11 +250,33 @@ func runServerAdd(ctx context.Context, in *os.File, out io.Writer, opts serverAd
 			token = inspect.Swarm.JoinTokens.Worker
 		}
 
+		// join as drain, so nothing gets scheduled before images land
 		if _, err := node.SwarmJoin(ctx, client.SwarmJoinOptions{
 			AdvertiseAddr: opts.host,
 			ListenAddr:    "0.0.0.0",
 			RemoteAddrs:   []string{mhost},
 			JoinToken:     token,
+			Availability:  swarm.NodeAvailabilityDrain,
+		}); err != nil {
+			return err
+		}
+
+		if err := transferRegistrylessImages(ctx, manager, mhost, config.Servers[mhost], opts.host, server, out); err != nil {
+			return err
+		}
+
+		info, err := node.Info(ctx, client.InfoOptions{})
+		if err != nil {
+			return err
+		}
+		ni, err := manager.NodeInspect(ctx, info.Info.Swarm.NodeID, client.NodeInspectOptions{})
+		if err != nil {
+			return err
+		}
+		ni.Node.Spec.Availability = swarm.NodeAvailabilityActive
+		if _, err := manager.NodeUpdate(ctx, ni.Node.ID, client.NodeUpdateOptions{
+			Version: ni.Node.Version,
+			Spec:    ni.Node.Spec,
 		}); err != nil {
 			return err
 		}
@@ -265,6 +291,64 @@ func runServerAdd(ctx context.Context, in *os.File, out io.Writer, opts serverAd
 	}
 
 	fmt.Fprintf(out, "Server '%s' added\n", opts.host)
+	return nil
+}
+
+func transferRegistrylessImages(ctx context.Context, manager client.APIClient, mhost string, mserver vault.Server, host string, server vault.Server, out io.Writer) error {
+	res, err := manager.ServiceList(ctx, client.ServiceListOptions{})
+	if err != nil {
+		return err
+	}
+
+	// current and previous generation per service — previous keeps
+	// `docker service rollback` working on the new node
+	images := map[string]bool{}
+	for _, svc := range res.Items {
+		if cs := svc.Spec.TaskTemplate.ContainerSpec; cs != nil && docker.IsRegistryless(cs.Image) {
+			images[cs.Image] = true
+		}
+		if svc.PreviousSpec == nil {
+			continue
+		}
+		if cs := svc.PreviousSpec.TaskTemplate.ContainerSpec; cs != nil && docker.IsRegistryless(cs.Image) {
+			images[cs.Image] = true
+		}
+	}
+
+	// ship every registryless tag riding those images, not only the spec
+	// pins, so user tags stay valid on the new node
+	tags := map[string]bool{}
+	for ref := range images {
+		inspect, err := manager.ImageInspect(ctx, ref)
+		if errdefs.IsNotFound(err) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		for _, tag := range inspect.RepoTags {
+			if docker.IsRegistryless(tag) {
+				tags[tag] = true
+			}
+		}
+	}
+	if len(tags) == 0 {
+		return nil
+	}
+
+	sshClient, err := ssh.DialWithKey(mhost, mserver.Port, mserver.User, mserver.Key)
+	if err != nil {
+		return err
+	}
+	defer sshClient.Close()
+
+	fmt.Fprintf(out, "Transferring %d image(s) to %s...\n", len(images), host)
+	cmd := fmt.Sprintf("docker save %s | gzip | ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p %d %s@%s 'docker load'",
+		strings.Join(slices.Sorted(maps.Keys(tags)), " "), server.Port, server.User, host)
+	if _, _, err := ssh.RunWithAgent(sshClient, cmd, server.Key); err != nil {
+		return fmt.Errorf("failed to transfer images: %w", err)
+	}
+
 	return nil
 }
 

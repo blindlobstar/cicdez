@@ -32,6 +32,8 @@ func NewDeployCommand() *cobra.Command {
 		Long: `Build images, push to registry, and deploy stack to Docker Swarm via SSH.
 
 Images are built and pushed automatically unless --no-build is specified.
+Images prefixed with registryless/ are streamed directly to swarm nodes
+instead of a registry.
 Secrets are decrypted and injected during deployment.
 Stack name defaults to the project name from the compose file.`,
 		Args: cobra.MaximumNArgs(1),
@@ -88,6 +90,7 @@ func runDeploy(ctx context.Context, out io.Writer, opts deployOptions) error {
 
 		buildOpts := docker.BuildOptions{
 			Registries: cfg.Registries,
+			Servers:    cfg.Servers,
 			NoCache:    opts.noCache,
 			Pull:       opts.pull,
 			Push:       true,
@@ -110,6 +113,12 @@ func runDeploy(ctx context.Context, out io.Writer, opts deployOptions) error {
 		return err
 	}
 	defer client.Close()
+
+	// resolve registryless tags on the manager: for these images the swarm
+	// plays the registry, so the tag there points at the last pushed content
+	if err := docker.PinServices(ctx, client, &project); err != nil {
+		return err
+	}
 
 	if !opts.quiet {
 		fmt.Fprintf(out, "==> Deploying stack %s\n", opts.stack)

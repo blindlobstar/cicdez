@@ -10,12 +10,14 @@ import (
 	"path/filepath"
 	"slices"
 
+	"github.com/blindlobstar/cicdez/internal/vault"
 	"github.com/compose-spec/compose-go/v2/types"
 	"github.com/containerd/platforms"
 	"github.com/distribution/reference"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/go-archive"
 	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/jsonstream"
 	"github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
 	"github.com/moby/moby/client/pkg/jsonmessage"
@@ -26,6 +28,7 @@ import (
 type BuildOptions struct {
 	Services   map[string]bool
 	Registries map[string]registry.AuthConfig
+	Servers    map[string]vault.Server
 	NoCache    bool
 	Pull       bool
 	Push       bool
@@ -64,19 +67,27 @@ func Build(ctx context.Context, dockerClient client.APIClient, project types.Pro
 
 		fmt.Fprintf(opt.Out, "Building %s...\n", imageName)
 
+		var id string
 		var err error
 		if bkClient != nil {
-			err = buildImageWithBuildKit(ctx, bkClient, imageName, svc.Build, project.WorkingDir, opt)
+			id, err = buildImageWithBuildKit(ctx, bkClient, imageName, svc.Build, project.WorkingDir, opt)
 		} else {
-			err = buildImage(ctx, dockerClient, imageName, svc.Build, project.WorkingDir, opt)
+			id, err = buildImage(ctx, dockerClient, imageName, svc.Build, project.WorkingDir, opt)
 		}
-		if err == nil && opt.Push {
-			fmt.Fprintf(opt.Out, "Pushing %s...\n", imageName)
-			err = PushImage(ctx, dockerClient, imageName, opt.Registries)
-		}
-
 		if err != nil {
 			return fmt.Errorf("failed to build %s: %w", svc.Name, err)
+		}
+
+		if opt.Push {
+			fmt.Fprintf(opt.Out, "Pushing %s...\n", imageName)
+			if IsRegistryless(imageName) {
+				err = PushRegistryless(ctx, dockerClient, imageName, id, opt.Servers, opt.Out)
+			} else {
+				err = PushImage(ctx, dockerClient, imageName, opt.Registries)
+			}
+			if err != nil {
+				return fmt.Errorf("failed to push %s: %w", svc.Name, err)
+			}
 		}
 	}
 
@@ -94,7 +105,7 @@ func readIgnorePatterns(buildContext string) []string {
 	return patterns
 }
 
-func buildImage(ctx context.Context, dockerClient client.APIClient, imageName string, build *types.BuildConfig, projectDir string, opt BuildOptions) error {
+func buildImage(ctx context.Context, dockerClient client.APIClient, imageName string, build *types.BuildConfig, projectDir string, opt BuildOptions) (string, error) {
 	buildContext := build.Context
 	if buildContext == "" {
 		buildContext = "."
@@ -109,7 +120,7 @@ func buildImage(ctx context.Context, dockerClient client.APIClient, imageName st
 		dockerfile = "Dockerfile"
 	}
 	if _, err := os.Stat(filepath.Join(buildContext, dockerfile)); err != nil {
-		return fmt.Errorf("cannot locate Dockerfile: %s", dockerfile)
+		return "", fmt.Errorf("cannot locate Dockerfile: %s", dockerfile)
 	}
 
 	excludePatterns := readIgnorePatterns(buildContext)
@@ -119,7 +130,7 @@ func buildImage(ctx context.Context, dockerClient client.APIClient, imageName st
 		ExcludePatterns: excludePatterns,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to create build context: %w", err)
+		return "", fmt.Errorf("failed to create build context: %w", err)
 	}
 	defer buildContextReader.Close()
 
@@ -165,7 +176,7 @@ func buildImage(ctx context.Context, dockerClient client.APIClient, imageName st
 		for _, ps := range build.Platforms {
 			p, err := platforms.Parse(ps)
 			if err != nil {
-				return fmt.Errorf("invalid platform %q: %w", ps, err)
+				return "", fmt.Errorf("invalid platform %q: %w", ps, err)
 			}
 			opts.Platforms = append(opts.Platforms, p)
 		}
@@ -173,11 +184,18 @@ func buildImage(ctx context.Context, dockerClient client.APIClient, imageName st
 
 	resp, err := dockerClient.ImageBuild(ctx, buildContextReader, opts)
 	if err != nil {
-		return fmt.Errorf("failed to start build: %w", err)
+		return "", fmt.Errorf("failed to start build: %w", err)
 	}
 	defer resp.Body.Close()
 
-	return jsonmessage.DisplayJSONMessagesStream(resp.Body, os.Stdout, os.Stdout.Fd(), true, nil)
+	var id string
+	err = jsonmessage.DisplayJSONMessagesStream(resp.Body, os.Stdout, os.Stdout.Fd(), true, func(msg jsonstream.Message) {
+		var result struct{ ID string }
+		if json.Unmarshal(*msg.Aux, &result) == nil && result.ID != "" {
+			id = result.ID
+		}
+	})
+	return id, err
 }
 
 func PushImage(ctx context.Context, dockerClient client.APIClient, imageName string, registries map[string]registry.AuthConfig) error {

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/agent"
 )
 
 const defaultTimeout = 30 * time.Second
@@ -73,6 +74,49 @@ func Run(client *ssh.Client, cmd string, sudo bool) (string, string, error) {
 	if sudo {
 		cmd = fmt.Sprintf("sudo sh -c %q", cmd)
 	}
+
+	err = session.Run(cmd)
+	stdout := strings.TrimSpace(stdoutBuf.String())
+	stderr := strings.TrimSpace(stderrBuf.String())
+
+	if err != nil {
+		return stdout, stderr, fmt.Errorf("%w: %s", err, stderr)
+	}
+
+	return stdout, stderr, nil
+}
+
+// RunWithAgent runs cmd with an in-memory ssh agent forwarded to the remote
+// host, so the command can ssh onward using keys that never land on remote disk.
+func RunWithAgent(client *ssh.Client, cmd string, keys ...[]byte) (string, string, error) {
+	keyring := agent.NewKeyring()
+	for _, keyData := range keys {
+		key, err := ssh.ParseRawPrivateKey(keyData)
+		if err != nil {
+			return "", "", fmt.Errorf("failed to parse private key: %w", err)
+		}
+		if err := keyring.Add(agent.AddedKey{PrivateKey: key}); err != nil {
+			return "", "", fmt.Errorf("failed to add key to agent: %w", err)
+		}
+	}
+
+	if err := agent.ForwardToAgent(client, keyring); err != nil {
+		return "", "", fmt.Errorf("failed to set up agent forwarding: %w", err)
+	}
+
+	session, err := client.NewSession()
+	if err != nil {
+		return "", "", fmt.Errorf("failed to create session: %w", err)
+	}
+	defer session.Close()
+
+	if err := agent.RequestAgentForwarding(session); err != nil {
+		return "", "", fmt.Errorf("failed to request agent forwarding: %w", err)
+	}
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	session.Stdout = &stdoutBuf
+	session.Stderr = &stderrBuf
 
 	err = session.Run(cmd)
 	stdout := strings.TrimSpace(stdoutBuf.String())
