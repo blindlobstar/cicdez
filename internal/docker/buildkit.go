@@ -11,6 +11,7 @@ import (
 	"github.com/compose-spec/compose-go/v2/types"
 	clitypes "github.com/docker/cli/cli/config/types"
 	bkclient "github.com/moby/buildkit/client"
+	"github.com/moby/buildkit/exporter/containerimage/exptypes"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/auth/authprovider"
 	"github.com/moby/buildkit/util/progress/progressui"
@@ -58,7 +59,7 @@ func newAuthProvider(registries map[string]registry.AuthConfig) session.Attachab
 	})
 }
 
-func buildImageWithBuildKit(ctx context.Context, bkClient *bkclient.Client, imageName string, build *types.BuildConfig, projectDir string, opt BuildOptions) error {
+func buildImageWithBuildKit(ctx context.Context, bkClient *bkclient.Client, imageName string, build *types.BuildConfig, projectDir string, opt BuildOptions) (string, error) {
 	buildContext := build.Context
 	if buildContext == "" {
 		buildContext = "."
@@ -73,7 +74,7 @@ func buildImageWithBuildKit(ctx context.Context, bkClient *bkclient.Client, imag
 	}
 
 	if _, err := os.Stat(filepath.Join(buildContext, dockerfile)); err != nil {
-		return fmt.Errorf("cannot locate Dockerfile: %s", dockerfile)
+		return "", fmt.Errorf("cannot locate Dockerfile: %s", dockerfile)
 	}
 	frontendAttrs := map[string]string{
 		"filename": dockerfile,
@@ -106,7 +107,7 @@ func buildImageWithBuildKit(ctx context.Context, bkClient *bkclient.Client, imag
 
 	fs, err := fsutil.NewFS(buildContext)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	solveOpt := bkclient.SolveOpt{
@@ -130,9 +131,14 @@ func buildImageWithBuildKit(ctx context.Context, bkClient *bkclient.Client, imag
 	ch := make(chan *bkclient.SolveStatus)
 	eg, ctx := errgroup.WithContext(ctx)
 
+	var id string
 	eg.Go(func() error {
-		_, err := bkClient.Solve(ctx, nil, solveOpt, ch)
-		return err
+		res, err := bkClient.Solve(ctx, nil, solveOpt, ch)
+		if err != nil {
+			return err
+		}
+		id = res.ExporterResponse[exptypes.ExporterImageConfigDigestKey]
+		return nil
 	})
 
 	eg.Go(func() error {
@@ -144,5 +150,8 @@ func buildImageWithBuildKit(ctx context.Context, bkClient *bkclient.Client, imag
 		return err
 	})
 
-	return eg.Wait()
+	if err := eg.Wait(); err != nil {
+		return "", err
+	}
+	return id, nil
 }
