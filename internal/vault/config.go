@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/moby/moby/api/types/registry"
 	"gopkg.in/yaml.v3"
 )
 
@@ -13,8 +12,7 @@ const Dir = ".cicdez"
 var configPath = filepath.Join(Dir, "config.age")
 
 type Config struct {
-	Servers    map[string]Server              `yaml:"servers"`
-	Registries map[string]registry.AuthConfig `yaml:"registries"`
+	Servers map[string]Server `yaml:"servers"`
 }
 
 type Server struct {

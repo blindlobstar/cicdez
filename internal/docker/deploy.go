@@ -3,9 +3,7 @@ package docker
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -17,10 +15,9 @@ import (
 	"github.com/blindlobstar/cicdez/internal/vault"
 	"github.com/compose-spec/compose-go/v2/types"
 	"github.com/containerd/errdefs"
-	"github.com/distribution/reference"
+	"github.com/docker/cli/cli/config/configfile"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
-	"github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/client"
 )
@@ -38,7 +35,7 @@ type DeployOptions struct {
 	ResolveImage string
 	Quiet        bool
 	Detach       bool
-	Registries   map[string]registry.AuthConfig
+	Auth         *configfile.ConfigFile
 	Out          io.Writer
 }
 
@@ -95,7 +92,7 @@ func Deploy(ctx context.Context, dockerClient client.APIClient, project types.Pr
 		return err
 	}
 
-	serviceNames, err := deployServices(ctx, dockerClient, services, opts.Stack, opts.ResolveImage, opts.Registries, opts.Quiet, opts.Out)
+	serviceNames, err := deployServices(ctx, dockerClient, services, opts.Stack, opts.ResolveImage, opts.Auth, opts.Quiet, opts.Out)
 	if err != nil {
 		return err
 	}
@@ -265,7 +262,7 @@ func createConfigs(ctx context.Context, apiClient client.APIClient, configs []sw
 	return nil
 }
 
-func deployServices(ctx context.Context, apiClient client.APIClient, services map[string]swarm.ServiceSpec, stack string, resolveImage string, registries map[string]registry.AuthConfig, quiet bool, out io.Writer) (map[string]string, error) {
+func deployServices(ctx context.Context, apiClient client.APIClient, services map[string]swarm.ServiceSpec, stack string, resolveImage string, authCfg *configfile.ConfigFile, quiet bool, out io.Writer) (map[string]string, error) {
 	res, err := apiClient.ServiceList(ctx, client.ServiceListOptions{Filters: getStackFilter(stack)})
 	if err != nil {
 		return nil, err
@@ -282,7 +279,7 @@ func deployServices(ctx context.Context, apiClient client.APIClient, services ma
 		name := ScopeName(stack, internalName)
 		image := serviceSpec.TaskTemplate.ContainerSpec.Image
 
-		encodedAuth := getEncodedAuth(image, registries)
+		encodedAuth := encodeAuth(resolveAuth(authCfg, image))
 
 		// loaded images have no registry manifest to resolve
 		if IsRegistryless(image) {
@@ -344,30 +341,6 @@ func deployServices(ctx context.Context, apiClient client.APIClient, services ma
 	}
 
 	return serviceNames, nil
-}
-
-func getEncodedAuth(image string, registries map[string]registry.AuthConfig) string {
-	if len(registries) == 0 {
-		return ""
-	}
-
-	ref, err := reference.ParseNormalizedNamed(image)
-	if err != nil {
-		return ""
-	}
-
-	registryHost := reference.Domain(ref)
-	auth, ok := registries[registryHost]
-	if !ok {
-		return ""
-	}
-
-	authBytes, err := json.Marshal(auth)
-	if err != nil {
-		return ""
-	}
-
-	return base64.URLEncoding.EncodeToString(authBytes)
 }
 
 func HasBuildConfig(project types.Project) bool {

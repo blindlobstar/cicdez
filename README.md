@@ -17,7 +17,7 @@ Simple CLI to provision servers and  manage deployments, configuration, and secr
 
 **How it works:**
 - Define services in `docker-compose.yaml`
-- Add servers and registry credentials with `cicdez server add` and `cicdez registry add`
+- Add servers with `cicdez server add`
 - Add secrets with `cicdez secret add`
 - Deploy with `cicdez deploy`
 
@@ -35,7 +35,6 @@ brew install blindlobstar/tap/cicdez
 ```bash
 cicdez key generate
 cicdez server add example.com --user deploy --setup
-cicdez registry add ghcr.io --username user --password token
 cicdez secret add DB_PASSWORD
 cicdez deploy
 ```
@@ -120,6 +119,10 @@ cicdez server remove worker1.example.com
 cicdez server remove worker1.example.com --soft
 ```
 
+## Private Registries
+
+cicdez uses your Docker credentials — run `docker login ghcr.io` once and builds, pushes, and swarm deploys pick it up automatically. Credential helpers (ECR, GCP Artifact Registry) work out of the box.
+
 ## Registryless Images
 
 Skip the registry entirely by prefixing an image name with `registryless/`:
@@ -131,7 +134,7 @@ services:
     build: .
 ```
 
-On deploy, the image is built locally and streamed directly to every swarm node over SSH — no `cicdez registry add` needed. Unchanged images are detected and skipped. New servers added to the cluster receive registryless images automatically from a manager.
+On deploy, the image is built locally and streamed directly to every swarm node over SSH — no registry account needed. Unchanged images are detected and skipped. New servers added to the cluster receive registryless images automatically from a manager.
 
 ## Secrets Format
 

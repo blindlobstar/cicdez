@@ -14,7 +14,6 @@ Secrets and credentials are encrypted with age and stored locally.`,
 	cmd.AddCommand(NewKeyCommand())
 	cmd.AddCommand(NewSecretCommand())
 	cmd.AddCommand(NewServerCommand())
-	cmd.AddCommand(NewRegistryCommand())
 	cmd.AddCommand(NewBuildCommand())
 	cmd.AddCommand(NewDeployCommand())
 	return cmd

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/compose-spec/compose-go/v2/types"
+	"github.com/docker/cli/cli/config/configfile"
 	clitypes "github.com/docker/cli/cli/config/types"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/exporter/containerimage/exptypes"
@@ -16,7 +17,6 @@ import (
 	"github.com/moby/buildkit/session/auth/authprovider"
 	"github.com/moby/buildkit/util/progress/progressui"
 	"github.com/moby/moby/api/types/build"
-	"github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
 	"github.com/tonistiigi/fsutil"
 	"golang.org/x/sync/errgroup"
@@ -41,20 +41,16 @@ func newBuildKitClient(ctx context.Context, dockerClient client.APIClient) (*bkc
 	)
 }
 
-func newAuthProvider(registries map[string]registry.AuthConfig) session.Attachable {
+func newAuthProvider(authCfg *configfile.ConfigFile) session.Attachable {
 	return authprovider.NewDockerAuthProvider(authprovider.DockerAuthProviderConfig{
 		AuthConfigProvider: func(ctx context.Context, host string, scope []string, _ authprovider.ExpireCachedAuthCheck) (clitypes.AuthConfig, error) {
-			if auth, ok := registries[host]; ok {
-				return clitypes.AuthConfig{
-					Username:      auth.Username,
-					Password:      auth.Password,
-					Auth:          auth.Auth,
-					ServerAddress: auth.ServerAddress,
-					IdentityToken: auth.IdentityToken,
-					RegistryToken: auth.RegistryToken,
-				}, nil
+			if authCfg == nil {
+				return clitypes.AuthConfig{}, nil
 			}
-			return clitypes.AuthConfig{}, nil
+			if host == authprovider.DockerHubRegistryHost {
+				host = authprovider.DockerHubConfigfileKey
+			}
+			return authCfg.GetAuthConfig(host)
 		},
 	})
 }
@@ -118,7 +114,7 @@ func buildImageWithBuildKit(ctx context.Context, bkClient *bkclient.Client, imag
 			"dockerfile": fs,
 		},
 		Session: []session.Attachable{
-			newAuthProvider(opt.Registries),
+			newAuthProvider(opt.Auth),
 		},
 		Exports: []bkclient.ExportEntry{{
 			Type: "moby",

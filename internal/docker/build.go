@@ -2,7 +2,6 @@ package docker
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -13,12 +12,11 @@ import (
 	"github.com/blindlobstar/cicdez/internal/vault"
 	"github.com/compose-spec/compose-go/v2/types"
 	"github.com/containerd/platforms"
-	"github.com/distribution/reference"
+	"github.com/docker/cli/cli/config/configfile"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/go-archive"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/jsonstream"
-	"github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
 	"github.com/moby/moby/client/pkg/jsonmessage"
 	"github.com/moby/patternmatcher/ignorefile"
@@ -26,13 +24,13 @@ import (
 )
 
 type BuildOptions struct {
-	Services   map[string]bool
-	Registries map[string]registry.AuthConfig
-	Servers    map[string]vault.Server
-	NoCache    bool
-	Pull       bool
-	Push       bool
-	Out        io.Writer
+	Services map[string]bool
+	Auth     *configfile.ConfigFile
+	Servers  map[string]vault.Server
+	NoCache  bool
+	Pull     bool
+	Push     bool
+	Out      io.Writer
 }
 
 func Build(ctx context.Context, dockerClient client.APIClient, project types.Project, opt BuildOptions) error {
@@ -83,7 +81,7 @@ func Build(ctx context.Context, dockerClient client.APIClient, project types.Pro
 			if IsRegistryless(imageName) {
 				err = PushRegistryless(ctx, dockerClient, imageName, id, opt.Servers, opt.Out)
 			} else {
-				err = PushImage(ctx, dockerClient, imageName, opt.Registries)
+				err = PushImage(ctx, dockerClient, imageName, opt.Auth)
 			}
 			if err != nil {
 				return fmt.Errorf("failed to push %s: %w", svc.Name, err)
@@ -149,7 +147,7 @@ func buildImage(ctx context.Context, dockerClient client.APIClient, imageName st
 		CacheFrom:   build.CacheFrom,
 		NetworkMode: build.Network,
 		ShmSize:     int64(build.ShmSize),
-		AuthConfigs: opt.Registries,
+		AuthConfigs: allAuthConfigs(opt.Auth),
 	}
 
 	if len(build.ExtraHosts) > 0 {
@@ -198,25 +196,9 @@ func buildImage(ctx context.Context, dockerClient client.APIClient, imageName st
 	return id, err
 }
 
-func PushImage(ctx context.Context, dockerClient client.APIClient, imageName string, registries map[string]registry.AuthConfig) error {
-	ref, err := reference.ParseNormalizedNamed(imageName)
-	if err != nil {
-		return err
-	}
-
-	registryHost := reference.Domain(ref)
-
-	var authStr string
-	if auth, ok := registries[registryHost]; ok {
-		authBytes, err := json.Marshal(auth)
-		if err != nil {
-			return fmt.Errorf("failed to encode auth: %w", err)
-		}
-		authStr = base64.URLEncoding.EncodeToString(authBytes)
-	}
-
+func PushImage(ctx context.Context, dockerClient client.APIClient, imageName string, authCfg *configfile.ConfigFile) error {
 	opts := client.ImagePushOptions{
-		RegistryAuth: authStr,
+		RegistryAuth: encodeAuth(resolveAuth(authCfg, imageName)),
 	}
 
 	resp, err := dockerClient.ImagePush(ctx, imageName, opts)

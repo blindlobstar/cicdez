@@ -81,6 +81,8 @@ func runDeploy(ctx context.Context, out io.Writer, opts deployOptions) error {
 		return fmt.Errorf("failed to load secrets: %w", err)
 	}
 
+	authCfg := docker.LoadDockerAuth()
+
 	if !opts.noBuild && docker.HasBuildConfig(project) {
 		dockerClient, err := client.New(client.WithHostFromEnv())
 		if err != nil {
@@ -89,12 +91,12 @@ func runDeploy(ctx context.Context, out io.Writer, opts deployOptions) error {
 		defer dockerClient.Close()
 
 		buildOpts := docker.BuildOptions{
-			Registries: cfg.Registries,
-			Servers:    cfg.Servers,
-			NoCache:    opts.noCache,
-			Pull:       opts.pull,
-			Push:       true,
-			Out:        out,
+			Auth:    authCfg,
+			Servers: cfg.Servers,
+			NoCache: opts.noCache,
+			Pull:    opts.pull,
+			Push:    true,
+			Out:     out,
 		}
 
 		if !opts.quiet {
@@ -129,7 +131,7 @@ func runDeploy(ctx context.Context, out io.Writer, opts deployOptions) error {
 		Prune:        opts.prune,
 		ResolveImage: opts.resolveImage,
 		Quiet:        opts.quiet,
-		Registries:   cfg.Registries,
+		Auth:         authCfg,
 		Detach:       opts.detach,
 		Out:          out,
 	})
