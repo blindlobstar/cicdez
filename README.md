@@ -120,6 +120,19 @@ cicdez server remove worker1.example.com
 cicdez server remove worker1.example.com --soft
 ```
 
+## Registryless Images
+
+Skip the registry entirely by prefixing an image name with `registryless/`:
+
+```yaml
+services:
+  app:
+    image: registryless/myapp
+    build: .
+```
+
+On deploy, the image is built locally and streamed directly to every swarm node over SSH — no `cicdez registry add` needed. Unchanged images are detected and skipped. New servers added to the cluster receive registryless images automatically from a manager.
+
 ## Secrets Format
 
 Secrets are stored as flat YAML key-value pairs:
