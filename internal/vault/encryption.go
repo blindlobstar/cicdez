@@ -2,6 +2,7 @@ package vault
 
 import (
 	"bytes"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"os"
@@ -13,58 +14,41 @@ import (
 
 const EnvAgeKeyPath = "CICDEZ_AGE_KEY_FILE"
 
+const valuePrefix = "age:"
+
 var identity *age.X25519Identity
 
-func EncryptFile(path string, data []byte) error {
+func EncryptValue(data []byte) (string, error) {
 	if err := loadIdentity(); err != nil {
-		return fmt.Errorf("failed to load recipients: %w", err)
+		return "", fmt.Errorf("failed to load identity: %w", err)
 	}
 
 	var encrypted bytes.Buffer
 	w, err := age.Encrypt(&encrypted, identity.Recipient())
 	if err != nil {
-		return fmt.Errorf("failed to create encrypt: %w", err)
+		return "", fmt.Errorf("failed to create encrypt: %w", err)
 	}
-
 	if _, err := w.Write(data); err != nil {
-		return fmt.Errorf("failed to encrypt data: %w", err)
+		return "", fmt.Errorf("failed to encrypt data: %w", err)
 	}
 	if err := w.Close(); err != nil {
-		return fmt.Errorf("failed to finalize encryption: %w", err)
+		return "", fmt.Errorf("failed to finalize encryption: %w", err)
 	}
 
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("failed to create directory %s: %w", path, err)
-	}
-
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
-	if err != nil {
-		return fmt.Errorf("failed to open file %s: %w", path, err)
-	}
-	defer file.Close()
-
-	if _, err := file.Write(encrypted.Bytes()); err != nil {
-		return fmt.Errorf("failed to write encrypted file: %w", err)
-	}
-
-	return nil
+	return valuePrefix + base64.StdEncoding.EncodeToString(encrypted.Bytes()), nil
 }
 
-func DecryptFile(path string) ([]byte, error) {
+func DecryptValue(value string) ([]byte, error) {
 	if err := loadIdentity(); err != nil {
 		return nil, fmt.Errorf("failed to load identity: %w", err)
 	}
 
-	file, err := os.OpenFile(path, os.O_RDONLY, 0)
-	if os.IsNotExist(err) {
-		return nil, nil
-	}
+	raw, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(value, valuePrefix))
 	if err != nil {
-		return nil, fmt.Errorf("failed to open encrypted file: %w", err)
+		return nil, fmt.Errorf("failed to decode encrypted value: %w", err)
 	}
-	defer file.Close()
 
-	r, err := age.Decrypt(file, identity)
+	r, err := age.Decrypt(bytes.NewReader(raw), identity)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decrypt: %w", err)
 	}
@@ -75,6 +59,16 @@ func DecryptFile(path string) ([]byte, error) {
 	}
 
 	return decrypted, nil
+}
+
+func writeVaultFile(path string, data []byte) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("failed to create directory %s: %w", path, err)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		return fmt.Errorf("failed to write file %s: %w", path, err)
+	}
+	return nil
 }
 
 func loadIdentity() error {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"text/template"
@@ -13,19 +14,36 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var secretsPath = filepath.Join(Dir, "secrets.age")
+var secretsPath = filepath.Join(Dir, "secrets.yaml")
 
 var ErrNestedSecret = errors.New("nested values not supported")
 
 type Secrets map[string]string
 
 func LoadSecrets(path string) (Secrets, error) {
-	data, err := DecryptFile(filepath.Join(path, secretsPath))
+	data, err := os.ReadFile(filepath.Join(path, secretsPath))
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to decrypt secrets: %w", err)
+		return nil, fmt.Errorf("failed to read secrets: %w", err)
 	}
 
-	return ParseSecrets(data)
+	encrypted, err := ParseSecrets(data)
+	if err != nil {
+		return nil, err
+	}
+
+	secrets := make(Secrets, len(encrypted))
+	for name, value := range encrypted {
+		plain, err := DecryptValue(value)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decrypt secret %q: %w", name, err)
+		}
+		secrets[name] = string(plain)
+	}
+
+	return secrets, nil
 }
 
 func ParseSecrets(data []byte) (Secrets, error) {
@@ -47,16 +65,36 @@ func ParseSecrets(data []byte) (Secrets, error) {
 }
 
 func SaveSecrets(path string, secrets Secrets) error {
-	data, err := yaml.Marshal(secrets)
+	existing := Secrets{}
+	if data, err := os.ReadFile(filepath.Join(path, secretsPath)); err == nil {
+		if existing, err = ParseSecrets(data); err != nil {
+			return fmt.Errorf("failed to parse existing secrets: %w", err)
+		}
+	}
+
+	// age output is random, so unchanged values must keep their old
+	// ciphertext or every save rewrites every line and git can't merge
+	encrypted := make(Secrets, len(secrets))
+	for name, value := range secrets {
+		if old, ok := existing[name]; ok {
+			if plain, err := DecryptValue(old); err == nil && string(plain) == value {
+				encrypted[name] = old
+				continue
+			}
+		}
+		enc, err := EncryptValue([]byte(value))
+		if err != nil {
+			return fmt.Errorf("failed to encrypt secret %q: %w", name, err)
+		}
+		encrypted[name] = enc
+	}
+
+	data, err := yaml.Marshal(encrypted)
 	if err != nil {
 		return fmt.Errorf("failed to marshal secrets: %w", err)
 	}
 
-	if err := EncryptFile(filepath.Join(path, secretsPath), data); err != nil {
-		return fmt.Errorf("failed to encrypt secrets: %w", err)
-	}
-
-	return nil
+	return writeVaultFile(filepath.Join(path, secretsPath), data)
 }
 
 const (
