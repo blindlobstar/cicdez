@@ -27,14 +27,13 @@ const (
 	DefaultNetworkDriver = "overlay"
 )
 
-func LoadCompose(ctx context.Context, cwd string, paths ...string) (types.Project, error) {
+func LoadCompose(ctx context.Context, paths ...string) (types.Project, error) {
 	projectOptions, err := cli.NewProjectOptions(
 		paths,
 		cli.WithOsEnv,
 		cli.WithDotEnv,
 		cli.WithInterpolation(true),
 		cli.WithResolvedPaths(true),
-		cli.WithWorkingDirectory(cwd),
 	)
 	if err != nil {
 		return types.Project{}, fmt.Errorf("failed to create project options: %w", err)

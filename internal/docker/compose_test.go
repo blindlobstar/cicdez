@@ -178,8 +178,12 @@ func TestComposeParser(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			if len(tt.files) == 0 {
+				// default compose file discovery starts at the process working directory
+				t.Chdir("../../testdata")
+			}
 			ctx := context.Background()
-			project, err := LoadCompose(ctx, "../../testdata/", tt.files...)
+			project, err := LoadCompose(ctx, tt.files...)
 			if err != nil {
 				t.Fatalf("LoadCompose failed: %v", err)
 			}

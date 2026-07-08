@@ -66,7 +66,7 @@ func runDeploy(ctx context.Context, out io.Writer, opts deployOptions) error {
 		return err
 	}
 
-	project, err := docker.LoadCompose(ctx, cwd, opts.composeFiles...)
+	project, err := docker.LoadCompose(ctx, opts.composeFiles...)
 	if err != nil {
 		return err
 	}
