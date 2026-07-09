@@ -142,9 +142,13 @@ func runSecretEdit(out io.Writer) error {
 		return fmt.Errorf("failed to load secrets: %w", err)
 	}
 
-	data, err := yaml.Marshal(secrets)
-	if err != nil {
-		return fmt.Errorf("failed to marshal secrets: %w", err)
+	// yaml.Marshal renders an empty map as "{}", leave the buffer blank instead
+	var data []byte
+	if len(secrets) > 0 {
+		data, err = yaml.Marshal(secrets)
+		if err != nil {
+			return fmt.Errorf("failed to marshal secrets: %w", err)
+		}
 	}
 
 	tmpFile, err := os.CreateTemp("", "cicdez-secrets-*.yaml")
